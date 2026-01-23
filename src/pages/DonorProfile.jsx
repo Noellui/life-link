@@ -1,0 +1,165 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+const DonorProfile = () => {
+  const navigate = useNavigate();
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Mock Existing Data
+  const [formData, setFormData] = useState({
+    // Personal
+    fullName: "Noel Louis",
+    email: "noel@example.com",
+    phone: "+91 98765 43210",
+    dob: "1998-05-15",
+    gender: "Male",
+    
+    // Address
+    address: "B-404, Galaxy Apartments",
+    city: "Vadodara",
+    state: "Gujarat",
+    zipCode: "390007",
+
+    // Health (The critical part)
+    bloodGroup: "O+", // Usually locked after registration
+    weight: "72",
+    lastDonation: "2025-11-15",
+    medicalConditions: "None",
+    isSmoker: false,
+    hasTattoo: false, // Tattoos within 6 months affect eligibility
+  });
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setIsSaving(true);
+
+    // Simulate API Update
+    setTimeout(() => {
+      alert("Profile updated successfully! ✅");
+      setIsSaving(false);
+      navigate('/dashboard/donor');
+    }, 1500);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        
+        {/* Header */}
+        <div className="bg-gray-900 px-8 py-6 flex justify-between items-center text-white">
+          <div>
+            <h1 className="text-2xl font-bold">Edit Profile ✏️</h1>
+            <p className="opacity-80 text-sm mt-1">Manage your personal details and health status.</p>
+          </div>
+          {/* Read Only Badge */}
+          <div className="text-right hidden sm:block">
+            <span className="block text-xs uppercase opacity-70">Blood Group</span>
+            <span className="text-2xl font-bold text-red-500">{formData.bloodGroup}</span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-8">
+          
+          {/* SECTION 1: Personal Details */}
+          <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-6">1. Personal Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input type="text" name="fullName" value={formData.fullName} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+              <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2 bg-gray-50" readOnly />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+              <input type="date" name="dob" value={formData.dob} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+          </div>
+
+          {/* SECTION 2: Address */}
+          <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-6">2. Address & Location</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+              <input type="text" name="address" value={formData.address} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <input type="text" name="city" value={formData.city} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <input type="text" name="state" value={formData.state} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Zip Code</label>
+              <input type="text" name="zipCode" value={formData.zipCode} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+          </div>
+
+          {/* SECTION 3: Health Profile */}
+          <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-6">3. Health & Eligibility</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
+              <input type="number" name="weight" value={formData.weight} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Last Donation Date</label>
+              <input type="date" name="lastDonation" value={formData.lastDonation} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+              <p className="text-xs text-gray-500 mt-1">Leave empty if you have never donated.</p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Medical Conditions / Allergies</label>
+              <textarea name="medicalConditions" rows="3" value={formData.medicalConditions} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2"></textarea>
+            </div>
+            
+            {/* Checkboxes */}
+            <div className="flex items-center gap-2">
+               <input type="checkbox" name="isSmoker" checked={formData.isSmoker} onChange={handleChange} className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500" />
+               <label className="text-sm text-gray-700">I am a regular smoker</label>
+            </div>
+            <div className="flex items-center gap-2">
+               <input type="checkbox" name="hasTattoo" checked={formData.hasTattoo} onChange={handleChange} className="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500" />
+               <label className="text-sm text-gray-700">I got a tattoo in the last 6 months</label>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-4 pt-4 border-t border-gray-100">
+            <button 
+              type="button" 
+              onClick={() => navigate('/dashboard/donor')} 
+              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              disabled={isSaving}
+              className={`px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium shadow-md flex items-center gap-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default DonorProfile;
