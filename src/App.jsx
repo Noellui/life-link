@@ -1,65 +1,98 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+
+// Component Imports
 import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Register from './pages/Register';
 import Login from './pages/Login';
+
+// Dashboard Imports
 import DonorDashboard from './pages/DonorDashboard';
 import HospitalDashboard from './pages/HospitalDashboard';
 import RecipientDashboard from './pages/RecipientDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+
+// Feature Page Imports
 import DonationCamps from './pages/DonationCamps';
 import DonorHistory from './pages/DonorHistory';
 import ScheduleAppointment from './pages/ScheduleAppointment';
-import DonorProfile from './pages/DonorProfile'
+import DonorProfile from './pages/DonorProfile';
+import RequestBlood from './pages/RequestBlood';
+import PatientRequests from './pages/PatientRequests';
+import StockManagement from './pages/StockManagement';
+import MyRequests from './pages/MyRequests';
+import HospitalEvents from './pages/HospitalEvents';
+import HospitalAppointments from './pages/HospitalAppointments';
 
 function App() {
-  // State to track if user is logged in
-  // We check localStorage first so the user stays logged in if they refresh the page
+  // --- AUTH STATE MANAGEMENT ---
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('user');
+    const savedUser = localStorage.getItem('lifeLinkUser'); 
     return savedUser ? JSON.parse(savedUser) : null;
   });
 
-  // Function to handle login (we pass this to Login.jsx)
+  // --- LOGIN HANDLER ---
   const handleLogin = (userData) => {
     setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('lifeLinkUser', JSON.stringify(userData));
   };
 
-  // Function to handle logout (we pass this to Navbar.jsx)
+  // --- LOGOUT HANDLER ---
   const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
+    setUser(null); 
+    localStorage.removeItem('lifeLinkUser'); 
   };
 
   return (
     <Router>
-      <div className="min-h-screen bg-gray-50">
-        {/* Pass user and logout function to Navbar */}
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        
+        {/* Navbar handles its own visibility based on user role */}
         <Navbar user={user} onLogout={handleLogout} />
         
         <Routes>
-          {/* Public Routes */}
+          {/* --- PUBLIC ROUTES --- */}
           <Route path="/" element={<Home />} />
           <Route path="/register" element={<Register />} />
-          
-          {/* Pass handleLogin to the Login page so it can update the state */}
           <Route path="/login" element={<Login onLogin={handleLogin} />} />
 
-          {/* Private Dashboard Routes */}
-          {/* We can protect these routes later, for now let's keep them open */}
-          <Route path="/dashboard/donor" element={<DonorDashboard />} />
-          <Route path="/dashboard/hospital" element={<HospitalDashboard />} />
-          <Route path="/dashboard/recipient" element={<RecipientDashboard />} />
-          <Route path="/dashboard/admin" element={<AdminDashboard />} />
-          {/*recipiennt routes */}
-          <Route path="/DonationCamps" element={<DonationCamps />} />
+          {/* --- PROTECTED DASHBOARDS --- */}
+          <Route 
+            path="/dashboard/admin" 
+            element={user?.role === 'Admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} 
+          />
+          <Route 
+            path="/dashboard/donor" 
+            element={user?.role === 'Donor' ? <DonorDashboard user={user} /> : <Navigate to="/login" />} 
+          />
+          <Route 
+            path="/dashboard/hospital" 
+            element={user?.role === 'Hospital' ? <HospitalDashboard user={user} /> : <Navigate to="/login" />} 
+          />
+          <Route 
+            path="/dashboard/recipient" 
+            element={user?.role === 'Recipient' ? <RecipientDashboard user={user} /> : <Navigate to="/login" />} 
+          />
 
-          {/*donor routes */}
+          {/* --- RECIPIENT FEATURES --- */}
+          <Route path="/request-blood" element={<RequestBlood />} />
+          <Route path="/my-requests" element={<MyRequests />} />
+
+          {/* --- DONOR FEATURES --- */}
+          <Route path="/DonationCamps" element={<DonationCamps />} />
           <Route path="/history" element={<DonorHistory />} />
           <Route path="/schedule" element={<ScheduleAppointment />} />
           <Route path="/profile" element={<DonorProfile />} />
+
+          {/* --- HOSPITAL FEATURES --- */}
+          <Route path="/patient-requests" element={<PatientRequests />} />
+          <Route path="/manage-stock" element={<StockManagement />} />
+          <Route path="/hospital/events" element={<HospitalEvents />} /> 
+          <Route path="/hospital/appointments" element={<HospitalAppointments />} /> 
+          
+          {/* --- FALLBACK --- */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
     </Router>

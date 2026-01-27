@@ -1,33 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const DonorProfile = () => {
   const navigate = useNavigate();
   const [isSaving, setIsSaving] = useState(false);
 
-  // Mock Existing Data
+  // --- 1. INITIAL STATE (Empty) ---
   const [formData, setFormData] = useState({
     // Personal
-    fullName: "Noel Louis",
-    email: "noel@example.com",
-    phone: "+91 98765 43210",
-    dob: "1998-05-15",
-    gender: "Male",
+    fullName: "",
+    email: "",
+    phone: "",
+    dob: "",
+    gender: "",
     
     // Address
-    address: "B-404, Galaxy Apartments",
-    city: "Vadodara",
-    state: "Gujarat",
-    zipCode: "390007",
+    address: "",
+    city: "",
+    state: "",
+    zipCode: "",
 
-    // Health (The critical part)
-    bloodGroup: "O+", // Usually locked after registration
-    weight: "72",
-    lastDonation: "2025-11-15",
-    medicalConditions: "None",
+    // Health
+    bloodGroup: "", 
+    weight: "",
+    lastDonation: "",
+    medicalConditions: "",
     isSmoker: false,
-    hasTattoo: false, // Tattoos within 6 months affect eligibility
+    hasTattoo: false,
   });
+
+  // --- 2. LOAD DATA ON MOUNT ---
+  useEffect(() => {
+    // Get currently logged-in user
+    const savedUser = JSON.parse(localStorage.getItem('lifeLinkUser'));
+    
+    if (savedUser) {
+      setFormData({
+        fullName: savedUser.name || "",
+        email: savedUser.email || "",
+        phone: savedUser.phone || "", // If these fields don't exist yet, default to empty
+        dob: savedUser.dob || "",
+        gender: savedUser.gender || "Male",
+        
+        address: savedUser.address || "",
+        city: savedUser.city || "",
+        state: savedUser.state || "",
+        zipCode: savedUser.zipCode || "",
+
+        bloodGroup: savedUser.bloodType || "O+", // Map 'bloodType' from auth to 'bloodGroup'
+        weight: savedUser.weight || "",
+        lastDonation: savedUser.lastDonation || "",
+        medicalConditions: savedUser.medicalConditions || "None",
+        isSmoker: savedUser.isSmoker || false,
+        hasTattoo: savedUser.hasTattoo || false,
+      });
+    }
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -41,12 +69,41 @@ const DonorProfile = () => {
     e.preventDefault();
     setIsSaving(true);
 
-    // Simulate API Update
+    // --- 3. SAVE DATA TO LOCAL STORAGE ---
+    // Retrieve current user object to preserve ID, Role, etc.
+    const currentUser = JSON.parse(localStorage.getItem('lifeLinkUser')) || {};
+
+    const updatedUser = {
+      ...currentUser,
+      // Update fields
+      name: formData.fullName,
+      email: formData.email,
+      phone: formData.phone,
+      dob: formData.dob,
+      gender: formData.gender,
+      address: formData.address,
+      city: formData.city,
+      state: formData.state,
+      zipCode: formData.zipCode,
+      // Health info
+      bloodType: formData.bloodGroup,
+      weight: formData.weight,
+      lastDonation: formData.lastDonation,
+      medicalConditions: formData.medicalConditions,
+      isSmoker: formData.isSmoker,
+      hasTattoo: formData.hasTattoo,
+    };
+
+    // Save back to storage
+    localStorage.setItem('lifeLinkUser', JSON.stringify(updatedUser));
+
+    // Simulate Network Delay
     setTimeout(() => {
       alert("Profile updated successfully! ✅");
       setIsSaving(false);
-      navigate('/dashboard/donor');
-    }, 1500);
+      // We force a reload so App.js picks up the new name/details in Navbar
+      window.location.href = '/dashboard/donor'; 
+    }, 1000);
   };
 
   return (
@@ -62,7 +119,7 @@ const DonorProfile = () => {
           {/* Read Only Badge */}
           <div className="text-right hidden sm:block">
             <span className="block text-xs uppercase opacity-70">Blood Group</span>
-            <span className="text-2xl font-bold text-red-500">{formData.bloodGroup}</span>
+            <span className="text-2xl font-bold text-red-500">{formData.bloodGroup || "N/A"}</span>
           </div>
         </div>
 
@@ -81,7 +138,7 @@ const DonorProfile = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" />
+              <input type="text" name="phone" value={formData.phone} onChange={handleChange} className="w-full border-gray-300 rounded-lg shadow-sm focus:ring-red-600 focus:border-red-600 border p-2" placeholder="+91 98765 43210"/>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
