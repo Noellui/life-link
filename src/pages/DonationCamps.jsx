@@ -104,7 +104,8 @@ const DonationCamps = () => {
   };
 
   const handleDirections = (lat, lng) => {
-    window.open(`http://googleusercontent.com/maps.google.com/?q=${lat},${lng}`, '_blank');
+    //window.open(`http://googleusercontent.com/maps.google.com/?q=${lat},${lng}`, '_blank');
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank')
   };
 
   // --- FILTERING LOGIC ---

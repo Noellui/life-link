@@ -1,79 +1,94 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-const DonorDashboard = ({ user: propUser }) => {
+const DonorDashboard = () => {
   const navigate = useNavigate();
 
-  // --- STATE ---
-  const [user] = useState(propUser || {
-    name: "Noel Louis",
-    email: "noel@example.com",
-    bloodType: "O+",
+  // --- STATE MANAGEMENT ---
+  const [user, setUser] = useState({
+    name: "Loading...",
+    email: "", 
+    bloodType: "...",
     city: "Vadodara",
-    id: "DN-2023-8492"
+    id: "..."
   });
 
   const [nearbyRequests, setNearbyRequests] = useState([]);
-  const [donationHistory, setDonationHistory] = useState([]);
   const [stats, setStats] = useState({ total: 0, lives: 0, lastDate: 'N/A' });
   const [myAppointment, setMyAppointment] = useState(null);
+  
+  const [donationHistory, setDonationHistory] = useState([]); 
+
+  // --- HELPER: Get Logged-In User ---
+  const getLoggedInUser = () => {
+    const storedUser = localStorage.getItem('user_data');
+    return storedUser ? JSON.parse(storedUser) : null;
+  };
 
   useEffect(() => {
-    // 1. FETCH LIVE REQUESTS
-    const storedRequests = JSON.parse(localStorage.getItem('live_blood_requests') || '[]');
-    const defaultRequests = [
-      { id: 99, patientName: "Rahul Verma", bloodGroup: "O+", city: "Vadodara", urgency: "Critical", units: 2, type: 'Community Request' },
-      { id: 98, patientName: "General Ward", bloodGroup: "O+", city: "Vadodara", urgency: "High", units: 5, type: 'Hospital Requisition' }
-    ];
-    setNearbyRequests([...storedRequests, ...defaultRequests]);
+    const fetchDashboardData = async () => {
+      const loggedInUser = getLoggedInUser();
+      console.log("Logged In User from LocalStorage:", loggedInUser);
 
-    // 2. FETCH HISTORY
-    const stockLogs = JSON.parse(localStorage.getItem('stock_logs') || '[]');
-    const myLogs = stockLogs.filter(log => 
-      log.type === 'Incoming' && 
-      log.email && 
-      log.email.toLowerCase() === user.email.toLowerCase()
-    );
+      if (!loggedInUser || !loggedInUser.email) {
+        navigate('/login');
+        return;
+      }
 
-    const historyData = myLogs.map(log => ({
-      id: log.id,
-      date: log.time.split(',')[0],
-      location: log.source,
-      units: Math.ceil(log.quantity / 450),
-      status: "Completed"
-    }));
+      try {
+        const email = loggedInUser.email;
 
-    const finalHistory = historyData.length > 0 ? historyData : [
-      { id: 1, date: "15/11/2025", location: "Red Cross Camp", units: 1, status: "Completed" }
-    ];
-    setDonationHistory(finalHistory);
+        // 1. Fetch Stats & User Details
+        const statsRes = await fetch(`http://127.0.0.1:8000/api/donor/stats/?email=${email}`);
+        if (statsRes.ok) {
+          const data = await statsRes.json();
+          console.log("Fetched Stats Data:", data);
+          setStats(data.stats);
+          setUser({
+            name: data.user_details.name,
+            email: email,
+            bloodType: data.user_details.bloodType,
+            city: "Vadodara",
+            id: data.user_details.id
+          });
+        }
 
-    setStats({ 
-      total: finalHistory.length, 
-      lives: finalHistory.length * 3, 
-      lastDate: finalHistory[0]?.date || "N/A" 
-    });
+        // 2. Fetch Urgent Blood Requests
+        const reqRes = await fetch('http://127.0.0.1:8000/api/donor/requests/');
+        if (reqRes.ok) {
+          const reqData = await reqRes.json();
+          setNearbyRequests(reqData);
+        }
 
-    // 3. FETCH UPCOMING APPOINTMENT (UPDATED LOGIC)
-    const allApps = JSON.parse(localStorage.getItem('donor_appointments') || '[]');
-    
-    // CHANGE: We only hide 'Fulfilled' (successful donations go to history).
-    // We KEEP 'Screening Failed' so we can show the user the feedback message.
-    const myApp = allApps.find(a => 
-      a.donorName === user.name && 
-      a.status !== 'Fulfilled' 
-    );
-    
-    setMyAppointment(myApp || null);
+        // 3. Fetch Upcoming Appointments
+        const appRes = await fetch(`http://127.0.0.1:8000/api/donor/appointments/?email=${email}`);
+        if (appRes.ok) {
+          const appData = await appRes.json();
+          setMyAppointment(appData.length > 0 ? appData[0] : null);
+        }
 
-  }, [user.email, user.name]);
+        // 4. Fetch Donation History
+        const histRes = await fetch(`http://127.0.0.1:8000/api/donor/history/?email=${email}`);
+        if (histRes.ok) {
+          const histData = await histRes.json();
+          setDonationHistory(histData);
+        }
+
+      } catch (err) {
+        console.error("Dashboard Connection Error:", err);
+      }
+    };
+
+    fetchDashboardData();
+  }, [navigate]);
 
   const handleDonateClick = (reqId) => {
-    alert(`Hospital notified for Request #${reqId}.`);
+    alert(`Thank you! The hospital has been notified that you are interested in Request #${reqId}.`);
   };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12">
+      {/* HEADER */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
@@ -87,6 +102,8 @@ const DonorDashboard = ({ user: propUser }) => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        
+        {/* STATS CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
             <div className="p-3 rounded-full bg-red-100 text-red-600 text-2xl">🩸</div>
@@ -103,43 +120,60 @@ const DonorDashboard = ({ user: propUser }) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* LEFT COLUMN: REQUESTS & HISTORY */}
           <div className="lg:col-span-2 space-y-8">
+            
+            {/* URGENT REQUESTS SECTION */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>
                 Urgent Blood Needed
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {nearbyRequests.map((req) => (
+                {nearbyRequests.length > 0 ? nearbyRequests.map((req) => (
                   <div key={req.id} className="bg-white rounded-xl shadow-sm border border-red-100 p-5 hover:shadow-md transition">
                     <div className="flex justify-between items-start mb-3"><span className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">{req.urgency}</span></div>
                     <h3 className="text-lg font-bold text-gray-900 mb-1">{req.patientName}</h3>
                     <p className="text-sm text-gray-500 mb-4">{req.city} • <strong>{req.bloodGroup}</strong> ({req.units} Units)</p>
                     <button onClick={() => handleDonateClick(req.id)} className="w-full bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700">I Can Donate</button>
                   </div>
-                ))}
+                )) : (
+                  <div className="col-span-2 bg-white p-6 rounded-xl text-center text-gray-500 border border-gray-200 border-dashed">
+                    No urgent blood requests at the moment. Good news!
+                  </div>
+                )}
               </div>
             </div>
 
+            {/* DONATION HISTORY SECTION */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-gray-900">Donation History</h3>
                 <Link to="/history" className="text-red-600 text-sm font-medium hover:underline">View All</Link>
               </div>
-              <table className="w-full text-left text-sm text-gray-600">
-                <thead className="bg-gray-50 text-gray-900 font-medium"><tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Location</th><th className="px-6 py-3">Units</th><th className="px-6 py-3">Status</th></tr></thead>
-                <tbody className="divide-y divide-gray-100">
-                  {donationHistory.map((item) => (
-                    <tr key={item.id}><td className="px-6 py-4">{item.date}</td><td className="px-6 py-4">{item.location}</td><td className="px-6 py-4">{item.units} Unit</td><td className="px-6 py-4"><span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-medium">{item.status}</span></td></tr>
-                  ))}
-                </tbody>
-              </table>
+              
+              {donationHistory.length > 0 ? (
+                <table className="w-full text-left text-sm text-gray-600">
+                  <thead className="bg-gray-50 text-gray-900 font-medium"><tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Location</th><th className="px-6 py-3">Units</th><th className="px-6 py-3">Status</th></tr></thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {donationHistory.map((item) => (
+                      <tr key={item.id}><td className="px-6 py-4">{item.date}</td><td className="px-6 py-4">{item.location}</td><td className="px-6 py-4">{item.units} Unit</td><td className="px-6 py-4"><span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-medium">{item.status}</span></td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  <p>You haven't made any donations yet.</p>
+                  <p className="text-sm mt-1">Schedule an appointment to save lives!</p>
+                </div>
+              )}
             </div>
           </div>
 
+          {/* RIGHT COLUMN: APPOINTMENTS & ACTIONS */}
           <div className="space-y-6">
             
-            {/* --- UPDATED APPOINTMENT CARD (HANDLES SCREENING FAILED) --- */}
             {myAppointment ? (
               <div className={`rounded-xl shadow-md border overflow-hidden ${
                 myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' 
@@ -191,7 +225,6 @@ const DonorDashboard = ({ user: propUser }) => {
                             Waiting for hospital approval...
                           </p>
                         )}
-                        {/* Only show Reschedule if NOT rejected/failed */}
                         <div className="mt-3 flex space-x-2">
                            <button onClick={() => navigate('/schedule')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded transition">Reschedule</button>
                         </div>

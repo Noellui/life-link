@@ -1,0 +1,270 @@
+from django.shortcuts import render
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.db.models import Sum, Count
+from django.db.models.functions import TruncMonth
+import json
+import datetime
+
+# Import all models
+from .models import (
+    UserRegistrationTbl, DonorTbl, HospitalRegistrationTbl, 
+    BloodRequestTbl, AppointmentTbl, BloodTypeTbl, EventTbl, RecipientTbl, BloodStorageTbl
+)
+
+# -------------------------------------------------------------------------
+# AUTHENTICATION
+# -------------------------------------------------------------------------
+
+@csrf_exempt 
+def login_view(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            user = UserRegistrationTbl.objects.filter(email=data.get('email')).first()
+            if not user:
+                return JsonResponse({'error': 'User not found'}, status=404)
+            if user.password == data.get('password'):
+                return JsonResponse({
+                    'message': 'Login successful',
+                    'user': {
+                        'name': user.full_name, 'email': user.email,
+                        'role': user.user_role, 'id': user.user_id
+                    }
+                }, status=200)
+            return JsonResponse({'error': 'Invalid password'}, status=401)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+@csrf_exempt
+def register_view(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            if UserRegistrationTbl.objects.filter(email=data.get('email')).exists():
+                return JsonResponse({'error': 'Email already registered'}, status=400)
+            new_user = UserRegistrationTbl.objects.create(
+                full_name=data.get('fullName'),
+                email=data.get('email'),
+                password=data.get('password'),
+                contact_no=data.get('phone'),
+                user_role=data.get('role'),
+                status='Active'
+            )
+            if data.get('role') == 'Hospital':
+                HospitalRegistrationTbl.objects.create(
+                    user=new_user, hospital_name=data.get('fullName'),
+                    contact_email=data.get('email'), address=data.get('address', ''),
+                    city=data.get('city', 'Vadodara')
+                )
+            elif data.get('role') == 'Donor':
+                blood_found = BloodTypeTbl.objects.filter(blood_type=data.get('bloodGroup')).first()
+                DonorTbl.objects.create(
+                    user=new_user, blood_id=blood_found.blood_id if blood_found else None,
+                    dob=data.get('dob') or '2000-01-01', weight=data.get('weight') or 60,
+                    city=data.get('city', 'Vadodara'), address=data.get('address', ''),
+                    gender=data.get('gender') or 'Male', registration_date=datetime.datetime.now()
+                )
+            return JsonResponse({'message': 'Registration successful!'}, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+# -------------------------------------------------------------------------
+# DONOR DASHBOARD & PROFILE APIS
+# -------------------------------------------------------------------------
+
+def donor_dashboard_stats(request):
+    """Fills 'Total Donations', 'Lives Impacted', and Top Stats"""
+    email = request.GET.get('email')
+    try:
+        user = UserRegistrationTbl.objects.filter(email=email).first()
+        donor = DonorTbl.objects.filter(user=user).first()
+        
+        # Determine Blood Type
+        blood_type = "Unknown"
+        if donor and donor.blood_id:
+            b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
+            if b_obj: blood_type = b_obj.blood_type
+
+        # Stats logic
+        fulfilled_count = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').count() if donor else 0
+        last_donation = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').order_by('-appointment_date').first()
+        
+        return JsonResponse({
+            'stats': {
+                'total': fulfilled_count,
+                'lives': fulfilled_count * 3,
+                'lastDate': last_donation.appointment_date.strftime('%Y-%m-%d') if last_donation else 'N/A'
+            },
+            'user_details': {
+                'name': user.full_name,
+                'id': donor.donor_id if donor else "N/A",
+                'bloodType': blood_type
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+def active_requests(request):
+    """Fills the 'Urgent Blood Needed' cards with forced data fallback"""
+    try:
+        # We use select_related to join the User table and get the name
+        requests = BloodRequestTbl.objects.select_related('recipient').filter(status='Pending').order_by('-request_date')[:4]
+        
+        data = []
+        for req in requests:
+            # If the recipient object is missing, we provide a placeholder
+            p_name = "Urgent Patient"
+            if req.recipient and req.recipient.full_name:
+                p_name = req.recipient.full_name
+
+            data.append({
+                'id': int(req.request_id),
+                'patientName': str(p_name), # Matches req.patientName
+                'bloodGroup': str(req.blood_group), # Matches req.bloodGroup
+                'units': str(req.units), # Matches req.units
+                'urgency': str(req.urgency), # Matches req.urgency
+                'city': "Vadodara" 
+            })
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+def donor_appointments_list(request):
+    """Fills the 'Request Pending' or 'Confirmed' card in Sidebar"""
+    email = request.GET.get('email')
+    try:
+        user = UserRegistrationTbl.objects.filter(email=email).first()
+        donor = DonorTbl.objects.filter(user=user).first()
+        if not donor: return JsonResponse([], safe=False)
+
+        # Get active appointments (exclude past fulfilled ones)
+        apps = AppointmentTbl.objects.filter(donor=donor).exclude(status__in=['Fulfilled']).order_by('appointment_date')
+        data = []
+        for a in apps:
+            data.append({
+                'id': a.appointment_id,
+                'centerName': a.hospital.hospital_name if a.hospital else "General Center",
+                'date': a.appointment_date.strftime('%Y-%m-%d') if a.appointment_date else 'N/A',
+                'time': "09:00 AM", # Replace with actual time field if available in your model
+                'status': a.status
+            })
+        return JsonResponse(data, safe=False)
+    except Exception:
+        return JsonResponse([], safe=False)
+
+def donor_history_list(request):
+    """Sends the status text to fill the green UI bubble"""
+    email = request.GET.get('email')
+    try:
+        user = UserRegistrationTbl.objects.filter(email=email).first()
+        donor = DonorTbl.objects.filter(user=user).first()
+        hist = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').order_by('-appointment_date')
+        data = []
+        for h in hist:
+            data.append({
+                'id': h.appointment_id,
+                'date': h.appointment_date.strftime('%Y-%m-%d'),
+                'location': h.hospital.hospital_name if h.hospital else "General Center",
+                'units': "1", # Standard unit per donation
+                'status': "Completed" # This text fills the green bubble
+            })
+        return JsonResponse(data, safe=False)
+    except Exception:
+        return JsonResponse([], safe=False)
+@csrf_exempt
+def donor_profile_view(request):
+    email = request.GET.get('email')
+    user = UserRegistrationTbl.objects.filter(email=email).first()
+    donor = DonorTbl.objects.filter(user=user).first()
+    if request.method == 'GET':
+        return JsonResponse({
+            'fullName': user.full_name, 'email': user.email, 'phone': user.contact_no,
+            'dob': donor.dob.strftime('%Y-%m-%d') if (donor and donor.dob) else "",
+            'address': donor.address if donor else "", 'city': donor.city if donor else "",
+            'weight': donor.weight if donor else 60, 'gender': donor.gender if donor else "Male"
+        })
+    elif request.method == 'PUT':
+        data = json.loads(request.body)
+        user.full_name = data.get('fullName', user.full_name)
+        user.contact_no = data.get('phone', user.contact_no)
+        user.save()
+        if donor:
+            donor.address = data.get('address', donor.address); donor.city = data.get('city', donor.city); donor.save()
+        return JsonResponse({'message': 'Profile updated'})
+
+# -------------------------------------------------------------------------
+# ADMIN DASHBOARD & REPORTS
+# -------------------------------------------------------------------------
+
+def admin_dashboard_stats(request):
+    try:
+        stats = {
+            'donors': UserRegistrationTbl.objects.filter(user_role='Donor').count(),
+            'hospitals': UserRegistrationTbl.objects.filter(user_role='Hospital').count(),
+            'recipients': UserRegistrationTbl.objects.filter(user_role='Recipient').count(),
+            'total_units': BloodStorageTbl.objects.aggregate(total=Sum('quantity'))['total'] or 0,
+            'pending_requests': BloodRequestTbl.objects.filter(status='Pending').count()
+        }
+        inventory = []
+        for bt in BloodTypeTbl.objects.all():
+            count = BloodStorageTbl.objects.filter(blood_id=bt.blood_id).aggregate(total=Sum('quantity'))['total'] or 0
+            inventory.append({
+                'type': bt.blood_type, 'count': count, 'capacity': 100,
+                'status': 'Critical' if count == 0 else ('Low' if count < 10 else 'Stable')
+            })
+        activity = []
+        for i in range(3):
+            d = datetime.date.today() - datetime.timedelta(days=i*30)
+            don = AppointmentTbl.objects.filter(status='Fulfilled', appointment_date__month=d.month).count()
+            req = BloodRequestTbl.objects.filter(request_date__month=d.month).count()
+            activity.append({
+                'month': d.strftime('%B'), 'donations': don, 'requests': req, 'outcome': f"{don-req:+}"
+            })
+        return JsonResponse({'stats': stats, 'inventory': inventory, 'monthly_activity': activity})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+def user_list(request):
+    users = UserRegistrationTbl.objects.values('user_id', 'full_name', 'email', 'user_role', 'status')
+    return JsonResponse(list(users), safe=False)
+
+@csrf_exempt
+def delete_user(request, user_id):
+    UserRegistrationTbl.objects.filter(user_id=user_id).update(status='Banned')
+    return JsonResponse({'message': 'User banned'})
+
+# -------------------------------------------------------------------------
+# EVENTS & HOSPITAL ACTIONS
+# -------------------------------------------------------------------------
+
+def event_list(request):
+    try:
+        events = EventTbl.objects.select_related('hospital').all().order_by('-event_date')
+        data = [{
+            'id': e.event_id, 'title': e.event_title, 'location': e.location,
+            'date': e.event_date.strftime('%Y-%m-%d') if e.event_date else "N/A",
+            'startTime': e.start_time, 'endTime': e.end_time,
+            'seats': e.seats_available, 'hospitalName': e.hospital.hospital_name if e.hospital else "Unknown"
+        } for e in events]
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def delete_event_view(request, event_id):
+    EventTbl.objects.filter(event_id=event_id).delete()
+    return JsonResponse({'message': 'Event deleted'})
+
+@csrf_exempt
+def fulfill_appointment_view(request, appointment_id):
+    appt = AppointmentTbl.objects.filter(appointment_id=appointment_id).first()
+    if not appt: return JsonResponse({'error': 'Not found'}, status=404)
+    appt.status = 'Fulfilled'; appt.save()
+    BloodStorageTbl.objects.create(
+        appointment=appt, hospital=appt.hospital, blood_id=appt.donor.blood_id if appt.donor else None,
+        quantity=1, status='Available', expiry_date=datetime.date.today() + datetime.timedelta(days=42)
+    )
+    return JsonResponse({'message': 'Stock updated'})
