@@ -26,12 +26,9 @@ const Login = ({ onLogin }) => {
       const data = await response.json();
 
       if (response.ok) {
-        // CRITICAL: Save to localStorage so Dashboard can see the email
         localStorage.setItem('user_data', JSON.stringify(data.user));
-        
         onLogin(data.user);
         
-        // Dynamic Redirection
         const rolePath = data.user.role.toLowerCase(); 
         navigate(`/dashboard/${rolePath}`);
       } else {
@@ -53,6 +50,14 @@ const Login = ({ onLogin }) => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          
+          {/* --- ADDED CENTERED HEADER --- */}
+          <div className="mb-6 border-b border-gray-100 pb-4">
+            <p className="text-center text-sm font-semibold text-gray-600 uppercase tracking-wide">
+              Login for Donor | Recipient | Hospital
+            </p>
+          </div>
+
           {error && <div className="mb-4 p-3 bg-red-50 text-red-600 border border-red-200 rounded text-sm">{error}</div>}
           
           <form className="space-y-6" onSubmit={handleSubmit}>
@@ -64,10 +69,17 @@ const Login = ({ onLogin }) => {
               <label className="block text-sm font-medium text-gray-700">Password</label>
               <input name="password" type="password" required onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
             </div>
-            <button type="submit" disabled={isLoading} className="w-full bg-red-600 text-white py-2 rounded-md hover:bg-red-700 transition">
+            <button type="submit" disabled={isLoading} className="w-full bg-red-600 text-white py-2 rounded-md hover:bg-red-700 transition shadow-sm font-bold">
               {isLoading ? 'Processing...' : 'Sign In'}
             </button>
           </form>
+
+          {/* Optional: Add a link to register if they don't have an account */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-500">
+              New to LifeLink? <Link to="/register" className="text-red-600 font-bold hover:underline">Create an account</Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

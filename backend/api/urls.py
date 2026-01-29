@@ -20,8 +20,10 @@ urlpatterns = [
     # NOTE: These were missing from your views.py, so I've linked them to existing logic
     # or you can comment them out if not used yet to prevent crashes.
     path('donor/requests/', views.active_requests, name='active_requests'), 
-    path('donor/appointments/', views.event_list, name='donor_appointments'),
+    path('donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
+    path('api/donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
     path('donor/history/', views.donor_history_list, name='donor_history'),
+    
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),
     path('appointments/<int:appointment_id>/fulfill/', views.fulfill_appointment_view, name='fulfill_appointment'),

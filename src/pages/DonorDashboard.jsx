@@ -186,8 +186,10 @@ const DonorDashboard = () => {
                   'bg-yellow-500'
                 }`}>
                   <h3 className="text-white font-bold text-sm uppercase tracking-wide">
-                    {myAppointment.status === 'Confirmed' ? 'Appointment Confirmed ✅' : 
+                    {
+                    myAppointment.status === 'Confirmed' ? 'Appointment Confirmed ✅' : 
                      myAppointment.status === 'Rejected' ? 'Appointment Declined ❌' : 
+                     myAppointment.status === 'Pending' ? 'Appointment Pending ⏳' : 
                      myAppointment.status === 'Screening Failed' ? 'Screening Unsuccessful ⚠️' : 
                      'Request Pending ⏳'}
                   </h3>

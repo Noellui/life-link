@@ -5,6 +5,9 @@ from django.db.models import Sum, Count
 from django.db.models.functions import TruncMonth
 import json
 import datetime
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.utils import timezone
 
 # Import all models
 from .models import (
@@ -131,48 +134,64 @@ def active_requests(request):
         return JsonResponse(data, safe=False)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 def donor_appointments_list(request):
-    """Fills the 'Request Pending' or 'Confirmed' card in Sidebar"""
+    """Fills the 'Request Pending' card with the most recent active appointment"""
     email = request.GET.get('email')
+    
     try:
+        # 1. Get User and then the linked Donor record
         user = UserRegistrationTbl.objects.filter(email=email).first()
+        if not user:
+            return JsonResponse([], safe=False)
+            
+        # Use filter().first() to avoid DoesNotExist crashes
         donor = DonorTbl.objects.filter(user=user).first()
-        if not donor: return JsonResponse([], safe=False)
+        if not donor:
+            return JsonResponse([], safe=False)
+        
+        # 2. Fetch the most recent appointment that isn't 'Fulfilled'
+        # We order by -appointment_date to get the one closest to today or the latest request
+        latest_app = AppointmentTbl.objects.filter(
+            donor=donor
+        ).exclude(status='Fulfilled').order_by('-appointment_date').first()
 
-        # Get active appointments (exclude past fulfilled ones)
-        apps = AppointmentTbl.objects.filter(donor=donor).exclude(status__in=['Fulfilled']).order_by('appointment_date')
-        data = []
-        for a in apps:
-            data.append({
-                'id': a.appointment_id,
-                'centerName': a.hospital.hospital_name if a.hospital else "General Center",
-                'date': a.appointment_date.strftime('%Y-%m-%d') if a.appointment_date else 'N/A',
-                'time': "09:00 AM", # Replace with actual time field if available in your model
-                'status': a.status
-            })
-        return JsonResponse(data, safe=False)
-    except Exception:
+        if latest_app:
+            return JsonResponse([{
+                'id': latest_app.appointment_id,
+                'centerName': latest_app.hospital.hospital_name if latest_app.hospital else "Main Center",
+                'date': latest_app.appointment_date.strftime('%Y-%m-%d'),
+                'time': "09:00 AM", # Replace with actual time field if your model has one
+                'status': latest_app.status # Values: 'Pending', 'Confirmed', 'Rejected', etc.
+            }], safe=False)
+
         return JsonResponse([], safe=False)
 
+    except Exception as e:
+        print(f"Error fetching appointment: {e}")
+        return JsonResponse([], safe=False)
+    
 def donor_history_list(request):
-    """Sends the status text to fill the green UI bubble"""
     email = request.GET.get('email')
     try:
         user = UserRegistrationTbl.objects.filter(email=email).first()
         donor = DonorTbl.objects.filter(user=user).first()
+        
+        # Strictly filter by this donor only
         hist = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').order_by('-appointment_date')
+        
         data = []
         for h in hist:
+            # We only add to 'data' if the record exists in the DB
             data.append({
                 'id': h.appointment_id,
                 'date': h.appointment_date.strftime('%Y-%m-%d'),
-                'location': h.hospital.hospital_name if h.hospital else "General Center",
-                'units': "1", # Standard unit per donation
-                'status': "Completed" # This text fills the green bubble
+                'location': h.hospital.hospital_name if h.hospital else "Unknown Center",
+                'units': "1", # In a real system, you'd pull this from a 'quantity' field
+                'status': h.status 
             })
         return JsonResponse(data, safe=False)
     except Exception:
+        # Return an empty list instead of default data if something fails
         return JsonResponse([], safe=False)
 @csrf_exempt
 def donor_profile_view(request):
@@ -268,3 +287,45 @@ def fulfill_appointment_view(request, appointment_id):
         quantity=1, status='Available', expiry_date=datetime.date.today() + datetime.timedelta(days=42)
     )
     return JsonResponse({'message': 'Stock updated'})
+
+
+@api_view(['GET'])
+def get_nearest_appointment(request):
+    # 1. Ensure the user is authenticated
+    if not request.user.is_authenticated:
+        return Response({"error": "Authentication required"}, status=401)
+
+    try:
+        # 2. Dynamically get the Donor ID linked to the logged-in User
+        # This assumes your Donor model has a field like 'user = models.OneToOneField(User, ...)'
+        donor = request.user.donor 
+        
+        now = timezone.now()
+        
+        # 3. Filter using the dynamic donor object
+        nearest = AppointmentTbl.objects.filter(
+            donor=donor,
+            status='Pending',
+            appointment_date__gte=now
+        ).order_by('appointment_date').first()
+
+        if nearest:
+            data = {
+                "id": nearest.appointment_id,
+                "hospital": nearest.hospital.hospital_name,
+                "day": nearest.appointment_date.strftime('%d'),
+                "month": nearest.appointment_date.strftime('%b'),
+                "time": nearest.appointment_date.strftime('%I:%M %p'),
+                "status": nearest.status
+            }
+            return Response(data)
+        
+        return Response({"message": "No upcoming appointments"}, status=200)
+
+    except AttributeError:
+        # This handles cases where a User exists but isn't registered as a Donor (e.g., an Admin)
+        return Response({"error": "User profile not found"}, status=404)
+@api_view(['POST'])
+def confirm_appointment_view(request, appointment_id):
+    # Your logic for confirming the appointment
+    return Response({"message": "Appointment confirmed"})
