@@ -104,7 +104,8 @@ def donor_dashboard_stats(request):
             'user_details': {
                 'name': user.full_name,
                 'id': donor.donor_id if donor else "N/A",
-                'bloodType': blood_type
+                'bloodType': blood_type,
+                'city': donor.city if donor else "Not Available"
             }
         })
     except Exception as e:
@@ -203,7 +204,7 @@ def donor_profile_view(request):
             'fullName': user.full_name, 'email': user.email, 'phone': user.contact_no,
             'dob': donor.dob.strftime('%Y-%m-%d') if (donor and donor.dob) else "",
             'address': donor.address if donor else "", 'city': donor.city if donor else "",
-            'weight': donor.weight if donor else 60, 'gender': donor.gender if donor else "Male"
+            'weight': donor.weight if donor else "Not Available", 'gender': donor.gender if donor else ""
         })
     elif request.method == 'PUT':
         data = json.loads(request.body)
@@ -211,7 +212,12 @@ def donor_profile_view(request):
         user.contact_no = data.get('phone', user.contact_no)
         user.save()
         if donor:
-            donor.address = data.get('address', donor.address); donor.city = data.get('city', donor.city); donor.save()
+            donor.address = data.get('address', donor.address)
+            donor.city = data.get('city', donor.city)
+            donor.dob = data.get('dob', donor.dob)
+            donor.weight = data.get('weight', donor.weight)
+            donor.gender = data.get('gender', donor.gender)
+            donor.save()
         return JsonResponse({'message': 'Profile updated'})
 
 # -------------------------------------------------------------------------

@@ -48,7 +48,7 @@ const DonorDashboard = () => {
             name: data.user_details.name,
             email: email,
             bloodType: data.user_details.bloodType,
-            city: "Vadodara",
+            city: data.user_details.city,
             id: data.user_details.id
           });
         }
@@ -94,7 +94,7 @@ const DonorDashboard = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.name} 👋</h1>
             <p className="text-gray-500 text-sm mt-1">
-              Donor ID: <span className="font-mono text-gray-700">{user.id}</span> • Blood Type: <span className="font-bold text-red-600">{user.bloodType}</span>
+              Donor ID: <span className="font-mono text-gray-700">{user.id}</span> • Blood Type: <span className="font-bold text-red-600">{user.bloodType}</span> • City: <span className="font-bold text-red-600">{user.city}</span>
             </p>
           </div>
           <Link to="/schedule" className="bg-red-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-red-700 transition shadow-md w-full md:w-auto text-center">+ Schedule Donation</Link>
