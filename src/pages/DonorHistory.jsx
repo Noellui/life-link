@@ -8,7 +8,7 @@ const DonorHistory = () => {
   useEffect(() => {
     const fetchHistory = async () => {
       // 1. Get user data from local storage
-      const storedUser = JSON.parse(localStorage.getItem('lifeLinkUser'));
+      const storedUser = JSON.parse(localStorage.getItem('user_data'));
       const email = storedUser?.email;
 
       if (!email) {
@@ -28,7 +28,7 @@ const DonorHistory = () => {
             id: record.id,
             date: record.date,
             location: record.location,
-            type: "Whole Blood", // Default type for history
+            type: "Whole Blood", 
             units: record.units || "1",
             status: record.status,
             certificateId: `CERT-${record.id.toString().padStart(5, '0')}`
@@ -36,10 +36,14 @@ const DonorHistory = () => {
 
           setHistory(formattedHistory);
 
-          // 4. Calculate stats based on the returned data
+          // 4. Calculate stats (Only counting Fulfilled for "Lives Saved")
+          const fulfilledCount = formattedHistory.filter(r => 
+            r.status?.toLowerCase().trim() === 'fulfilled'
+          ).length;
+
           setStats({
-            totalDonations: formattedHistory.length,
-            livesSaved: formattedHistory.length * 3,
+            totalDonations: fulfilledCount,
+            livesSaved: fulfilledCount * 3,
             lastDonation: formattedHistory[0]?.date || "N/A"
           });
         }
@@ -54,6 +58,16 @@ const DonorHistory = () => {
   }, []);
 
   const handleDownload = (certId) => alert(`📥 Downloading Certificate ID: ${certId}...`);
+
+  // Helper to get color classes based on status
+  const getStatusColor = (status) => {
+    const s = status?.toLowerCase().trim();
+    if (s === 'fulfilled') return 'bg-green-100 text-green-800';
+    if (s === 'pending') return 'bg-yellow-100 text-yellow-800';
+    if (s === 'confirmed') return 'bg-blue-100 text-blue-800';
+    if (s === 'canceled') return 'bg-gray-100 text-gray-800';
+    return 'bg-red-100 text-red-800'; // Default for Rejected or Screening Failed
+  };
 
   if (loading) {
     return (
@@ -73,7 +87,7 @@ const DonorHistory = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-xl border-l-4 border-red-500 shadow-sm">
-            <p className="text-sm font-bold text-gray-500 uppercase">Total Donations</p>
+            <p className="text-sm font-bold text-gray-500 uppercase">Successful Donations</p>
             <p className="text-3xl font-bold text-gray-800 mt-1">{stats.totalDonations}</p>
           </div>
           <div className="bg-white p-6 rounded-xl border-l-4 border-green-500 shadow-sm">
@@ -81,7 +95,7 @@ const DonorHistory = () => {
             <p className="text-3xl font-bold text-gray-800 mt-1">{stats.livesSaved} ❤️</p>
           </div>
           <div className="bg-white p-6 rounded-xl border-l-4 border-blue-500 shadow-sm">
-            <p className="text-sm font-bold text-gray-500 uppercase">Last Donation</p>
+            <p className="text-sm font-bold text-gray-500 uppercase">Last Record</p>
             <p className="text-2xl font-bold text-gray-800 mt-1">{stats.lastDonation}</p>
           </div>
         </div>
@@ -109,14 +123,18 @@ const DonorHistory = () => {
                       <td className="px-6 py-4 text-sm text-gray-600">{record.location}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{record.type} ({record.units} Unit)</td>
                       <td className="px-6 py-4">
-                        <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
                           {record.status}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleDownload(record.certificateId)} className="text-red-600 hover:text-red-900 text-sm font-medium">
-                          Download
-                        </button>
+                        {record.status?.toLowerCase().trim() === 'fulfilled' ? (
+                          <button onClick={() => handleDownload(record.certificateId)} className="text-red-600 hover:text-red-900 text-sm font-medium">
+                            Download
+                          </button>
+                        ) : (
+                          <span className="text-gray-400 text-sm">N/A</span>
+                        )}
                       </td>
                     </tr>
                   ))

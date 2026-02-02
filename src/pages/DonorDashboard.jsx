@@ -16,7 +16,6 @@ const DonorDashboard = () => {
   const [nearbyRequests, setNearbyRequests] = useState([]);
   const [stats, setStats] = useState({ total: 0, lives: 0, lastDate: 'N/A' });
   const [myAppointment, setMyAppointment] = useState(null);
-  
   const [donationHistory, setDonationHistory] = useState([]); 
 
   // --- HELPER: Get Logged-In User ---
@@ -28,8 +27,6 @@ const DonorDashboard = () => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       const loggedInUser = getLoggedInUser();
-      console.log("Logged In User from LocalStorage:", loggedInUser);
-
       if (!loggedInUser || !loggedInUser.email) {
         navigate('/login');
         return;
@@ -38,11 +35,9 @@ const DonorDashboard = () => {
       try {
         const email = loggedInUser.email;
 
-        // 1. Fetch Stats & User Details
         const statsRes = await fetch(`http://127.0.0.1:8000/api/donor/stats/?email=${email}`);
         if (statsRes.ok) {
           const data = await statsRes.json();
-          console.log("Fetched Stats Data:", data);
           setStats(data.stats);
           setUser({
             name: data.user_details.name,
@@ -53,21 +48,22 @@ const DonorDashboard = () => {
           });
         }
 
-        // 2. Fetch Urgent Blood Requests
         const reqRes = await fetch('http://127.0.0.1:8000/api/donor/requests/');
         if (reqRes.ok) {
           const reqData = await reqRes.json();
           setNearbyRequests(reqData);
         }
 
-        // 3. Fetch Upcoming Appointments
+        // --- 3. FETCH UPCOMING APPOINTMENTS ---
         const appRes = await fetch(`http://127.0.0.1:8000/api/donor/appointments/?email=${email}`);
         if (appRes.ok) {
           const appData = await appRes.json();
-          setMyAppointment(appData.length > 0 ? appData[0] : null);
+          // Find the first appointment that isn't canceled to show in the 'Upcoming' card
+          const activeAppointment = appData.find(app => app.status !== 'Canceled');
+          setMyAppointment(activeAppointment || null);
         }
 
-        // 4. Fetch Donation History
+        // --- 4. FETCH FULL HISTORY (ALL STATUSES) ---
         const histRes = await fetch(`http://127.0.0.1:8000/api/donor/history/?email=${email}`);
         if (histRes.ok) {
           const histData = await histRes.json();
@@ -81,6 +77,27 @@ const DonorDashboard = () => {
 
     fetchDashboardData();
   }, [navigate]);
+
+  // --- HANDLE CANCEL ---
+  const handleCancel = async (appointmentId) => {
+    if (!window.confirm("Are you sure you want to cancel this appointment?")) return;
+
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/donor/appointments/${appointmentId}/cancel/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (response.ok) {
+        alert("Appointment canceled successfully.");
+        window.location.reload(); 
+      } else {
+        alert("Failed to cancel appointment.");
+      }
+    } catch (err) {
+      console.error("Cancel Error:", err);
+    }
+  };
 
   const handleDonateClick = (reqId) => {
     alert(`Thank you! The hospital has been notified that you are interested in Request #${reqId}.`);
@@ -121,10 +138,7 @@ const DonorDashboard = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* LEFT COLUMN: REQUESTS & HISTORY */}
           <div className="lg:col-span-2 space-y-8">
-            
-            {/* URGENT REQUESTS SECTION */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span></span>
@@ -146,7 +160,7 @@ const DonorDashboard = () => {
               </div>
             </div>
 
-            {/* DONATION HISTORY SECTION */}
+            {/* DONATION HISTORY TABLE (NOW SHOWING ALL STATUSES) */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-gray-900">Donation History</h3>
@@ -158,7 +172,23 @@ const DonorDashboard = () => {
                   <thead className="bg-gray-50 text-gray-900 font-medium"><tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Location</th><th className="px-6 py-3">Units</th><th className="px-6 py-3">Status</th></tr></thead>
                   <tbody className="divide-y divide-gray-100">
                     {donationHistory.map((item) => (
-                      <tr key={item.id}><td className="px-6 py-4">{item.date}</td><td className="px-6 py-4">{item.location}</td><td className="px-6 py-4">{item.units} Unit</td><td className="px-6 py-4"><span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-medium">{item.status}</span></td></tr>
+                      <tr key={item.id}>
+                        <td className="px-6 py-4">{item.date}</td>
+                        <td className="px-6 py-4">{item.location}</td>
+                        <td className="px-6 py-4">{item.units} Unit</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            // Using .toLowerCase() and .trim() makes the check bulletproof
+                            item.status?.toLowerCase().trim() === 'fulfilled' ? 'bg-green-100 text-green-800' :
+                            item.status?.toLowerCase().trim() === 'pending'   ? 'bg-yellow-100 text-yellow-800' :
+                            item.status?.toLowerCase().trim() === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                            item.status?.toLowerCase().trim() === 'canceled'  ? 'bg-gray-100 text-gray-800' :
+                            'bg-red-100 text-red-800' // This remains for 'Rejected' or 'Screening Failed'
+                            }`}>
+                              {item.status}
+                              </span>
+                          </td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -171,9 +201,7 @@ const DonorDashboard = () => {
             </div>
           </div>
 
-          {/* RIGHT COLUMN: APPOINTMENTS & ACTIONS */}
           <div className="space-y-6">
-            
             {myAppointment ? (
               <div className={`rounded-xl shadow-md border overflow-hidden ${
                 myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' 
@@ -189,14 +217,13 @@ const DonorDashboard = () => {
                     {
                     myAppointment.status === 'Confirmed' ? 'Appointment Confirmed ✅' : 
                      myAppointment.status === 'Rejected' ? 'Appointment Declined ❌' : 
-                     myAppointment.status === 'Pending' ? 'Appointment Pending ⏳' : 
+                     myAppointment.status === 'Pending' ? 'Upcoming appointment ⏳' : 
                      myAppointment.status === 'Screening Failed' ? 'Screening Unsuccessful ⚠️' : 
                      'Request Pending ⏳'}
                   </h3>
                 </div>
                 
                 <div className="p-6">
-                  {/* FAILURE STATES */}
                   {myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' ? (
                     <div>
                       <p className="text-gray-800 font-bold mb-2">
@@ -213,7 +240,6 @@ const DonorDashboard = () => {
                       </button>
                     </div>
                   ) : (
-                    // PENDING / CONFIRMED STATES
                     <div className="flex items-start space-x-4">
                       <div className="flex-col text-center bg-gray-100 p-2 rounded-lg min-w-[60px]">
                         <span className="block text-xs uppercase text-gray-500 font-bold">Date</span>
@@ -229,6 +255,14 @@ const DonorDashboard = () => {
                         )}
                         <div className="mt-3 flex space-x-2">
                            <button onClick={() => navigate('/schedule')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded transition">Reschedule</button>
+                           {(myAppointment.status === 'Pending' || myAppointment.status === 'Confirmed') && (
+                            <button 
+                              onClick={() => handleCancel(myAppointment.id)} 
+                              className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded transition font-medium"
+                            >
+                              Cancel
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -9,53 +9,41 @@ const DonationCamps = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' }); 
   const [showDatePicker, setShowDatePicker] = useState(false);
-  
-  // Track registered IDs to prevent double booking in this session
   const [registeredCampIds, setRegisteredCampIds] = useState([]); 
+  const [loading, setLoading] = useState(true);
 
-  // --- 1. LOAD DATA (Hybrid: Live + Defaults) ---
+  // --- 1. LOAD LIVE DATA FROM BACKEND ---
   useEffect(() => {
-    // A. Fetch Live Events created by Hospitals
-    const liveEvents = JSON.parse(localStorage.getItem('hospital_events') || '[]');
-    
-    // B. Default Mock Data (So the page isn't empty if no hospital events exist)
-    const defaultCamps = [
-      {
-        id: 101,
-        title: "Mega City Blood Drive",
-        hospitalName: "Indu Blood Bank",
-        date: "2026-02-20",
-        startTime: "10:00",
-        endTime: "17:00",
-        location: "Vinraj Plaza, Vadodara",
-        lat: 22.3008, lng: 73.1905,
-        seats: 45,
-        donorsRegistered: 12
-      },
-      {
-        id: 102,
-        title: "Red Cross Weekend Camp",
-        hospitalName: "Indian Red Cross Society",
-        date: "2026-02-25",
-        startTime: "09:00",
-        endTime: "14:00",
-        location: "Siddhivinayak Complex, Alkapuri",
-        lat: 22.3114, lng: 73.1666,
-        seats: 12,
-        donorsRegistered: 5
+    const fetchCamps = async () => {
+      try {
+        // Fetching from your event_list view in Django
+        const response = await fetch('http://127.0.0.1:8000/api/events/');
+        if (response.ok) {
+          const data = await response.json();
+          // Map backend EventTbl fields to frontend keys
+          const formattedCamps = data.map(event => ({
+            id: event.id,
+            title: event.title,
+            hospitalName: event.hospitalName,
+            date: event.date,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            location: event.location,
+            seats: event.seats,
+            // Default coordinates for directions button
+            lat: 22.3072, 
+            lng: 73.1812 
+          }));
+          setCamps(formattedCamps);
+        }
+      } catch (error) {
+        console.error("Error fetching camps:", error);
+      } finally {
+        setLoading(false);
       }
-    ];
+    };
 
-    // C. Merge Live + Default
-    // We map 'liveEvents' to ensure data consistency
-    const formattedLiveEvents = liveEvents.map(e => ({
-      ...e,
-      hospitalName: e.hospitalName || "City General Hospital",
-      seats: parseInt(e.seats) || 0,
-      donorsRegistered: parseInt(e.donorsRegistered) || 0
-    }));
-
-    setCamps([...formattedLiveEvents, ...defaultCamps]);
+    fetchCamps();
   }, []);
 
   // --- HANDLERS ---
@@ -66,49 +54,50 @@ const DonationCamps = () => {
     setDateRange({ start: '', end: '' });
   };
 
-  // --- 2. HANDLE REGISTRATION (Updates Database) ---
-  const handleRegister = (campId) => {
-    if(!window.confirm("Confirm registration for this blood drive?")) return;
-
-    // A. Update Local State UI (Optimistic UI Update)
-    const updatedCamps = camps.map(camp => {
-      if (camp.id === campId) {
-        if (camp.seats <= 0) {
-          alert("Sorry, this camp is fully booked.");
-          return camp;
-        }
-        return { 
-          ...camp, 
-          seats: camp.seats - 1, 
-          donorsRegistered: camp.donorsRegistered + 1 
-        };
-      }
-      return camp;
-    });
-
-    setCamps(updatedCamps);
-    setRegisteredCampIds([...registeredCampIds, campId]); // Mark as registered locally
-
-    // B. Update Global Storage (So Hospital sees the change)
-    // Note: We only update the 'live' events in local storage
-    const liveEvents = JSON.parse(localStorage.getItem('hospital_events') || '[]');
-    const eventIndex = liveEvents.findIndex(e => e.id === campId);
-    
-    if (eventIndex !== -1) {
-      liveEvents[eventIndex].seats = parseInt(liveEvents[eventIndex].seats) - 1;
-      liveEvents[eventIndex].donorsRegistered = parseInt(liveEvents[eventIndex].donorsRegistered) + 1;
-      localStorage.setItem('hospital_events', JSON.stringify(liveEvents));
+  // --- 2. HANDLE REGISTRATION (Updates Django Database) ---
+  const handleRegister = async (campId) => {
+    const storedUser = JSON.parse(localStorage.getItem('lifeLinkUser'));
+    if (!storedUser) {
+      alert("Please login to register for camps.");
+      return navigate('/login');
     }
 
-    alert("✅ Registration Successful! See you there.");
+    if(!window.confirm("Confirm registration for this blood drive?")) return;
+
+    try {
+      // POST to your backend to update AppointmentTbl and EventTbl
+      const response = await fetch('http://127.0.0.1:8000/api/donor/register-event/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: storedUser.email,
+          eventId: campId
+        })
+      });
+
+      if (response.ok) {
+        // Optimistic UI Update after DB success
+        setCamps(prevCamps => prevCamps.map(camp => {
+          if (camp.id === campId) {
+            return { ...camp, seats: camp.seats - 1 };
+          }
+          return camp;
+        }));
+        setRegisteredCampIds([...registeredCampIds, campId]);
+        alert("✅ Registration Successful! Updated in database.");
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Registration failed.");
+      }
+    } catch (error) {
+      console.error("Registration error:", error);
+    }
   };
 
   const handleDirections = (lat, lng) => {
-    //window.open(`http://googleusercontent.com/maps.google.com/?q=${lat},${lng}`, '_blank');
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank')
+    window.open(`http://googleusercontent.com/maps.google.com/?q=${lat},${lng}`, '_blank');
   };
 
-  // --- FILTERING LOGIC ---
   const getProcessedCamps = () => {
     let processed = camps.filter(camp =>
       (camp.location && camp.location.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -121,27 +110,23 @@ const DonationCamps = () => {
     } else if (dateRange.start) {
       processed = processed.filter(camp => camp.date >= dateRange.start);
     }
-
     return processed;
   };
 
   const displayedCamps = getProcessedCamps();
   const isDateFilterActive = dateRange.start || dateRange.end;
 
+  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading camps...</div>;
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto">
-        
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Nearby Donation Camps ⛺</h1>
           <p className="text-gray-600 mt-2">Find and register for blood donation drives happening around you.</p>
         </div>
 
-        {/* Search & Filter Bar */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 flex flex-col md:flex-row gap-4 justify-between items-center z-20 relative">
-          
-          {/* Search */}
           <div className="relative w-full md:w-96">
             <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">🔍</span>
             <input
@@ -153,7 +138,6 @@ const DonationCamps = () => {
             />
           </div>
 
-          {/* Date Filter */}
           <div className="flex gap-2 w-full md:w-auto">
             <div className="relative">
               <button 
@@ -185,7 +169,6 @@ const DonationCamps = () => {
           </div>
         </div>
 
-        {/* Camps List */}
         <div className="grid gap-6">
           {displayedCamps.map((camp) => {
             const isRegistered = registeredCampIds.includes(camp.id);
@@ -193,8 +176,6 @@ const DonationCamps = () => {
 
             return (
               <div key={camp.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row justify-between hover:shadow-md transition duration-200 z-0">
-                
-                {/* Left: Info */}
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-xl font-bold text-gray-900">{camp.title}</h3>
@@ -204,9 +185,7 @@ const DonationCamps = () => {
                       {isFull ? 'Full' : 'Open'}
                     </span>
                   </div>
-                  
                   <p className="text-red-600 font-medium text-sm mb-4">Organized by {camp.hospitalName}</p>
-                  
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 text-sm text-gray-600">
                     <div className="flex items-center gap-2"><span>📅</span> {camp.date}</div>
                     <div className="flex items-center gap-2"><span>⏰</span> {camp.startTime} - {camp.endTime}</div>
@@ -214,7 +193,6 @@ const DonationCamps = () => {
                   </div>
                 </div>
 
-                {/* Right: Actions */}
                 <div className="mt-4 md:mt-0 md:ml-6 flex flex-col items-center justify-center gap-3 min-w-[140px]">
                   <div className="text-center">
                     <span className={`block text-2xl font-bold ${isFull ? 'text-red-600' : 'text-gray-800'}`}>
@@ -222,7 +200,6 @@ const DonationCamps = () => {
                     </span>
                     <span className="text-xs text-gray-500 uppercase tracking-wide">Slots Left</span>
                   </div>
-                  
                   {isRegistered ? (
                     <button disabled className="w-full bg-green-100 text-green-700 border border-green-200 px-4 py-2 rounded-lg font-bold cursor-default">
                       ✓ Registered
@@ -240,7 +217,6 @@ const DonationCamps = () => {
                       {isFull ? 'Full' : 'Register Now'}
                     </button>
                   )}
-                  
                   <button 
                     onClick={() => handleDirections(camp.lat, camp.lng)}
                     className="w-full text-gray-600 hover:text-red-600 text-sm font-medium border border-gray-200 rounded-lg py-2 hover:bg-gray-50 flex items-center justify-center gap-2"
@@ -248,24 +224,10 @@ const DonationCamps = () => {
                     <span>🗺️</span> Directions
                   </button>
                 </div>
-
               </div>
             );
           })}
-
-          {displayedCamps.length === 0 && (
-            <div className="text-center py-12">
-              <p className="text-gray-500 text-lg">No donation camps found matching your filters.</p>
-              <button 
-                onClick={() => { setSearchTerm(''); setDateRange({start:'', end:''}); }}
-                className="mt-4 text-red-600 font-medium hover:underline"
-              >
-                Clear All Filters
-              </button>
-            </div>
-          )}
         </div>
-
       </div>
     </div>
   );

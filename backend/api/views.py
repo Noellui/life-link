@@ -8,6 +8,7 @@ import datetime
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.utils import timezone
+from django.db import connection, transaction
 
 # Import all models
 from .models import (
@@ -177,22 +178,20 @@ def donor_history_list(request):
         user = UserRegistrationTbl.objects.filter(email=email).first()
         donor = DonorTbl.objects.filter(user=user).first()
         
-        # Strictly filter by this donor only
-        hist = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').order_by('-appointment_date')
+        # REMOVE status='Fulfilled' to show everything
+        hist = AppointmentTbl.objects.filter(donor=donor).order_by('-appointment_date')
         
         data = []
         for h in hist:
-            # We only add to 'data' if the record exists in the DB
             data.append({
                 'id': h.appointment_id,
                 'date': h.appointment_date.strftime('%Y-%m-%d'),
                 'location': h.hospital.hospital_name if h.hospital else "Unknown Center",
-                'units': "1", # In a real system, you'd pull this from a 'quantity' field
+                'units': "1", 
                 'status': h.status 
             })
         return JsonResponse(data, safe=False)
     except Exception:
-        # Return an empty list instead of default data if something fails
         return JsonResponse([], safe=False)
 @csrf_exempt
 def donor_profile_view(request):
@@ -219,6 +218,122 @@ def donor_profile_view(request):
             donor.gender = data.get('gender', donor.gender)
             donor.save()
         return JsonResponse({'message': 'Profile updated'})
+@csrf_exempt
+def register_for_event(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('email')
+            event_id = data.get('eventId')
+
+            user = UserRegistrationTbl.objects.filter(email=email).first()
+            donor = DonorTbl.objects.filter(user=user).first()
+            event = EventTbl.objects.filter(event_id=event_id).first()
+            
+            if not donor or not event:
+                return JsonResponse({'error': 'Profile or Event not found.'}, status=404)
+
+            # Manually instantiate the appointment
+            new_appt = AppointmentTbl(
+                donor=donor,
+                event_id=event.event_id,
+                hospital_id=event.hospital_id,
+                appointment_date=event.event_date or timezone.now(),
+                status='Pending',
+                health_questionnaire_data="{}"
+            )
+
+            # Use the 'using' parameter to force a cleaner SQL generation
+            # and explicitly set the ID if your DB doesn't auto-increment
+            new_appt.save(force_insert=True)
+
+            # Atomically update seats in EventTbl
+            if event.seats_available and event.seats_available > 0:
+                event.seats_available -= 1
+                event.save()
+
+            return JsonResponse({'message': 'Registration successful!'})
+        except Exception as e:
+            # The error message will now show if it's a null constraint or ID issue
+            return JsonResponse({'error': str(e)}, status=500)@csrf_exempt
+from django.db import transaction
+
+@csrf_exempt
+def register_for_event(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            email = data.get('email')
+            event_id = data.get('eventId')
+
+            # 1. Fetch related objects to get IDs
+            user = UserRegistrationTbl.objects.filter(email=email).first()
+            donor = DonorTbl.objects.filter(user=user).first()
+            event = EventTbl.objects.filter(event_id=event_id).first()
+            
+            if not donor or not event:
+                return JsonResponse({'error': 'Profile or Event not found.'}, status=404)
+
+            # 2. Use Raw SQL to bypass Django's 'RETURNING' clause
+            with connection.cursor() as cursor:
+                sql = """
+                    INSERT INTO appointment_tbl 
+                    (donor_id, event_id, hospital_id, appointment_date, status, health_questionnaire_data) 
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                params = [
+                    donor.donor_id, 
+                    event.event_id, 
+                    event.hospital_id, 
+                    event.event_date or timezone.now(), 
+                    'Pending', 
+                    '{}'
+                ]
+                cursor.execute(sql, params)
+
+            # 3. Update seats in EventTbl (ORM save usually works for updates)
+            if event.seats_available and event.seats_available > 0:
+                event.seats_available -= 1
+                event.save()
+
+            return JsonResponse({'message': 'Registration successful!'}, status=201)
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+            
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+@csrf_exempt
+def cancel_appointment(request, appointment_id):
+    if request.method == 'POST':
+        try:
+            # 1. Get the appointment
+            appointment = AppointmentTbl.objects.filter(appointment_id=appointment_id).first()
+            
+            if not appointment:
+                return JsonResponse({'error': 'Appointment not found'}, status=404)
+
+            # 2. Update status to Canceled
+            appointment.status = 'Canceled'
+            appointment.save()
+
+            # 3. If it was linked to a camp event, give the seat back
+            if appointment.event:
+                event = appointment.event
+                if event.seats_available is not None:
+                    event.seats_available += 1
+                    event.save()
+
+            return JsonResponse({'message': 'Appointment canceled successfully'})
+        except Exception as e:
+            # If ORM fails, use Raw SQL as a fallback for MariaDB
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE appointment_tbl SET status = 'Canceled' WHERE appointment_id = %s",
+                    [appointment_id]
+                )
+            return JsonResponse({'message': 'Canceled via fallback logic'})
+            
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 # -------------------------------------------------------------------------
 # ADMIN DASHBOARD & REPORTS

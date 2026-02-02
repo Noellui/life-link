@@ -16,13 +16,12 @@ urlpatterns = [
     # --- DONOR DASHBOARD & PROFILE ---
     path('donor/stats/', views.donor_dashboard_stats, name='donor_stats'),
     path('donor/profile/', views.donor_profile_view, name='donor_profile'),
-    
-    # NOTE: These were missing from your views.py, so I've linked them to existing logic
-    # or you can comment them out if not used yet to prevent crashes.
     path('donor/requests/', views.active_requests, name='active_requests'), 
     path('donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
     path('api/donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
     path('donor/history/', views.donor_history_list, name='donor_history'),
+    path('donor/register-event/', views.register_for_event, name='register_event'),
+    path('donor/appointments/<int:appointment_id>/cancel/', views.cancel_appointment, name='cancel_appointment'),
     
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),
