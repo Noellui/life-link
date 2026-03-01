@@ -26,4 +26,8 @@ urlpatterns = [
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),
     path('appointments/<int:appointment_id>/fulfill/', views.fulfill_appointment_view, name='fulfill_appointment'),
+    # Raw SQL endpoints
+    path('api/requests/create-raw/', views.create_blood_request_raw, name='create_blood_request_raw'),
+    path('api/profile/update-raw/', views.update_profile_raw, name='update_profile_raw'),
+    path('api/hospital/manage-stock-raw/', views.manage_stock_raw, name='manage_stock_raw'),
 ]

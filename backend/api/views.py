@@ -218,45 +218,6 @@ def donor_profile_view(request):
             donor.gender = data.get('gender', donor.gender)
             donor.save()
         return JsonResponse({'message': 'Profile updated'})
-@csrf_exempt
-def register_for_event(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            email = data.get('email')
-            event_id = data.get('eventId')
-
-            user = UserRegistrationTbl.objects.filter(email=email).first()
-            donor = DonorTbl.objects.filter(user=user).first()
-            event = EventTbl.objects.filter(event_id=event_id).first()
-            
-            if not donor or not event:
-                return JsonResponse({'error': 'Profile or Event not found.'}, status=404)
-
-            # Manually instantiate the appointment
-            new_appt = AppointmentTbl(
-                donor=donor,
-                event_id=event.event_id,
-                hospital_id=event.hospital_id,
-                appointment_date=event.event_date or timezone.now(),
-                status='Pending',
-                health_questionnaire_data="{}"
-            )
-
-            # Use the 'using' parameter to force a cleaner SQL generation
-            # and explicitly set the ID if your DB doesn't auto-increment
-            new_appt.save(force_insert=True)
-
-            # Atomically update seats in EventTbl
-            if event.seats_available and event.seats_available > 0:
-                event.seats_available -= 1
-                event.save()
-
-            return JsonResponse({'message': 'Registration successful!'})
-        except Exception as e:
-            # The error message will now show if it's a null constraint or ID issue
-            return JsonResponse({'error': str(e)}, status=500)@csrf_exempt
-from django.db import transaction
 
 @csrf_exempt
 def register_for_event(request):
@@ -282,11 +243,11 @@ def register_for_event(request):
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """
                 params = [
-                    donor.donor_id, 
-                    event.event_id, 
-                    event.hospital_id, 
-                    event.event_date or timezone.now(), 
-                    'Pending', 
+                    donor.donor_id,
+                    event.event_id,
+                    event.hospital_id,
+                    event.event_date or timezone.now(),
+                    'Pending',
                     '{}'
                 ]
                 cursor.execute(sql, params)
@@ -450,3 +411,85 @@ def get_nearest_appointment(request):
 def confirm_appointment_view(request, appointment_id):
     # Your logic for confirming the appointment
     return Response({"message": "Appointment confirmed"})
+
+
+@csrf_exempt
+def create_blood_request_raw(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            with connection.cursor() as cursor:
+                # 1. Find recipient_id linked to user_id
+                cursor.execute("SELECT recipient_id FROM recipient_tbl WHERE user_id = %s", [data.get('userId')])
+                recipient = cursor.fetchone()
+                if not recipient:
+                    return JsonResponse({'error': 'Recipient not found'}, status=404)
+
+                # 2. Insert request using Raw SQL
+                sql = """
+                    INSERT INTO blood_request_tbl 
+                    (recipient_id, hospital_id, blood_group, units, urgency, doctor_name, status, request_date) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                params = [
+                    recipient[0],
+                    data.get('hospitalId'),
+                    data.get('bloodGroup'),
+                    data.get('units'),
+                    data.get('urgency', 'Routine'),
+                    data.get('doctorName', ''),
+                    'Pending',
+                    timezone.now()
+                ]
+                cursor.execute(sql, params)
+            return JsonResponse({'message': 'Blood request submitted successfully!'}, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def update_profile_raw(request):
+    if request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            with connection.cursor() as cursor:
+                # Update User Table
+                cursor.execute(
+                    "UPDATE user_registration_tbl SET full_name = %s, contact_no = %s WHERE email = %s",
+                    [data.get('fullName'), data.get('phone'), data.get('email')]
+                )
+                # Update Donor Table
+                cursor.execute(
+                    "UPDATE donor_tbl SET address = %s, city = %s, weight = %s, gender = %s WHERE user_id = (SELECT user_id FROM user_registration_tbl WHERE email = %s)",
+                    [data.get('address'), data.get('city'), data.get('weight'), data.get('gender'), data.get('email')]
+                )
+            return JsonResponse({'message': 'Profile updated successfully'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def manage_stock_raw(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            with connection.cursor() as cursor:
+                sql = """
+                    INSERT INTO blood_storage_tbl 
+                    (hospital_id, blood_id, quantity, expiry_date, status) 
+                    VALUES (%s, (SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s), %s, %s, %s)
+                """
+                params = [
+                    data.get('hospitalId'),
+                    data.get('bloodGroup'),
+                    data.get('units'),
+                    data.get('expiryDate'),
+                    'Available'
+                ]
+                cursor.execute(sql, params)
+            return JsonResponse({'message': 'Stock updated successfully'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
