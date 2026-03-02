@@ -9,6 +9,9 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db import connection, transaction
+from django.core.mail import send_mail
+from django.conf import settings
+from django.utils.crypto import get_random_string
 
 # Import all models
 from .models import (
@@ -25,7 +28,8 @@ def login_view(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            user = UserRegistrationTbl.objects.filter(email=data.get('email')).first()
+            # Only allow login for users with Active status
+            user = UserRegistrationTbl.objects.filter(email=data.get('email'), status='Active').first()
             if not user:
                 return JsonResponse({'error': 'User not found'}, status=404)
             if user.password == data.get('password'):
@@ -46,34 +50,96 @@ def register_view(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            if UserRegistrationTbl.objects.filter(email=data.get('email')).exists():
-                return JsonResponse({'error': 'Email already registered'}, status=400)
-            new_user = UserRegistrationTbl.objects.create(
-                full_name=data.get('fullName'),
-                email=data.get('email'),
-                password=data.get('password'),
-                contact_no=data.get('phone'),
-                user_role=data.get('role'),
-                status='Active'
+            email = data.get('email')
+            role = data.get('role')
+            token = get_random_string(64)
+
+            with connection.cursor() as cursor:
+                # 1. Check if email exists
+                cursor.execute("SELECT 1 FROM user_registration_tbl WHERE email = %s", [email])
+                if cursor.fetchone():
+                    return JsonResponse({'error': 'Email already registered'}, status=400)
+
+                # 2. Insert into user_registration_tbl
+                user_sql = """
+                    INSERT INTO user_registration_tbl 
+                    (full_name, email, password, contact_no, user_role, status, verification_token) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(user_sql, [
+                    data.get('fullName'), email, data.get('password'),
+                    data.get('phone'), role, 'Pending', token
+                ])
+                
+                # 3. Get the new User_id to link profiles
+                new_user_id = cursor.lastrowid
+
+                # 4. Handle Donor-specific registration
+                if role == 'Donor':
+                    # Find blood_id from blood_type_tbl
+                    cursor.execute("SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s", [data.get('bloodGroup')])
+                    blood_res = cursor.fetchone()
+                    blood_id = blood_res[0] if blood_res else None
+
+                    donor_sql = """
+                        INSERT INTO donor_tbl 
+                        (user_id, blood_id, address, date_of_birth, weight, registration_date, gender, city) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(donor_sql, [
+                        new_user_id, blood_id, data.get('address', ''), 
+                        data.get('dob', '2000-01-01'), data.get('weight', 60), 
+                        timezone.now(), data.get('gender', 'Male'), data.get('city', 'Vadodara')
+                    ])
+
+                # 5. Handle Hospital-specific registration
+                elif role == 'Hospital':
+                    hospital_sql = """
+                        INSERT INTO hospital_registration_tbl 
+                        (user_id, hospital_name, address, contact_email, city) 
+                        VALUES (%s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(hospital_sql, [
+                        new_user_id, data.get('fullName'), data.get('address', ''), 
+                        email, data.get('city', 'Vadodara')
+                    ])
+
+            # 6. Send the Verification Email
+            verify_url = f"http://localhost:8000/api/verify-email/?token={token}&email={email}"
+            send_mail(
+                'Verify your LifeLink Account',
+                f'Please click the link to verify your account: {verify_url}',
+                'noreply@lifelink.com',
+                [email],
+                fail_silently=False,
             )
-            if data.get('role') == 'Hospital':
-                HospitalRegistrationTbl.objects.create(
-                    user=new_user, hospital_name=data.get('fullName'),
-                    contact_email=data.get('email'), address=data.get('address', ''),
-                    city=data.get('city', 'Vadodara')
-                )
-            elif data.get('role') == 'Donor':
-                blood_found = BloodTypeTbl.objects.filter(blood_type=data.get('bloodGroup')).first()
-                DonorTbl.objects.create(
-                    user=new_user, blood_id=blood_found.blood_id if blood_found else None,
-                    dob=data.get('dob') or '2000-01-01', weight=data.get('weight') or 60,
-                    city=data.get('city', 'Vadodara'), address=data.get('address', ''),
-                    gender=data.get('gender') or 'Male', registration_date=datetime.datetime.now()
-                )
-            return JsonResponse({'message': 'Registration successful!'}, status=201)
+
+            return JsonResponse({'message': 'Registration successful! Verification email sent.'}, status=201)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+def verify_email(request):
+    token = request.GET.get('token')
+    email = request.GET.get('email')
+
+    if not token or not email:
+        return JsonResponse({'error': 'Invalid verification link'}, status=400)
+
+    try:
+        with connection.cursor() as cursor:
+            # Check token and email match a pending user, then activate and clear the token
+            cursor.execute(
+                "UPDATE user_registration_tbl SET status = 'Active', verification_token = NULL "
+                "WHERE email = %s AND verification_token = %s AND status = 'Pending'",
+                [email, token]
+            )
+            if cursor.rowcount > 0:
+                return JsonResponse({'message': 'Email verified! You can now log in.'})
+            else:
+                return JsonResponse({'error': 'Invalid or expired link.'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 # -------------------------------------------------------------------------
 # DONOR DASHBOARD & PROFILE APIS
@@ -418,31 +484,35 @@ def create_blood_request_raw(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
+            # Use Raw SQL to find the recipient_id linked to the logged-in user
             with connection.cursor() as cursor:
-                # 1. Find recipient_id linked to user_id
                 cursor.execute("SELECT recipient_id FROM recipient_tbl WHERE user_id = %s", [data.get('userId')])
                 recipient = cursor.fetchone()
+                
                 if not recipient:
-                    return JsonResponse({'error': 'Recipient not found'}, status=404)
+                    return JsonResponse({'error': 'Recipient profile not found'}, status=404)
 
-                # 2. Insert request using Raw SQL
+                recipient_id = recipient[0]
+
+                # Raw SQL Insert for MariaDB compatibility
                 sql = """
                     INSERT INTO blood_request_tbl 
                     (recipient_id, hospital_id, blood_group, units, urgency, doctor_name, status, request_date) 
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """
                 params = [
-                    recipient[0],
-                    data.get('hospitalId'),
+                    recipient_id,
+                    data.get('hospitalId', 9001),
                     data.get('bloodGroup'),
                     data.get('units'),
-                    data.get('urgency', 'Routine'),
-                    data.get('doctorName', ''),
+                    data.get('urgency'),
+                    data.get('doctorName', 'Emergency Dept'),
                     'Pending',
                     timezone.now()
                 ]
                 cursor.execute(sql, params)
-            return JsonResponse({'message': 'Blood request submitted successfully!'}, status=201)
+                
+            return JsonResponse({'message': 'Blood request created successfully'}, status=201)
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)
     return JsonResponse({'error': 'Method not allowed'}, status=405)

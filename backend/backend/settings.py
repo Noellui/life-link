@@ -129,3 +129,12 @@ CORS_ALLOWED_ORIGINS = [
 ]
 # Allow basic login credentials to be sent
 CORS_ALLOW_CREDENTIALS = True
+
+
+# Email settings (configure with real credentials for production)
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'noellouis2005@gmail.com'
+EMAIL_HOST_PASSWORD = 'yvlu cznb cngn hqcx'

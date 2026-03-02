@@ -5,6 +5,7 @@ urlpatterns = [
     # --- AUTHENTICATION ---
     path('register/', views.register_view, name='register'),
     path('login/', views.login_view, name='login'),
+    path('verify-email/', views.verify_email, name='verify_email'),
 
     # --- ADMIN DASHBOARD ---
     path('admin/stats/', views.admin_dashboard_stats, name='admin_stats'),
@@ -30,4 +31,6 @@ urlpatterns = [
     path('api/requests/create-raw/', views.create_blood_request_raw, name='create_blood_request_raw'),
     path('api/profile/update-raw/', views.update_profile_raw, name='update_profile_raw'),
     path('api/hospital/manage-stock-raw/', views.manage_stock_raw, name='manage_stock_raw'),
+    # Recipient endpoint expected by frontend
+    path('recipient/create-request/', views.create_blood_request_raw, name='create_request'),
 ]
