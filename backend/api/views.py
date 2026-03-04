@@ -203,39 +203,34 @@ def active_requests(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 def donor_appointments_list(request):
-    """Fills the 'Request Pending' card with the most recent active appointment"""
     email = request.GET.get('email')
-    
+
     try:
-        # 1. Get User and then the linked Donor record
         user = UserRegistrationTbl.objects.filter(email=email).first()
         if not user:
             return JsonResponse([], safe=False)
-            
-        # Use filter().first() to avoid DoesNotExist crashes
+
         donor = DonorTbl.objects.filter(user=user).first()
         if not donor:
             return JsonResponse([], safe=False)
-        
-        # 2. Fetch the most recent appointment that isn't 'Fulfilled'
-        # We order by -appointment_date to get the one closest to today or the latest request
-        latest_app = AppointmentTbl.objects.filter(
-            donor=donor
-        ).exclude(status='Fulfilled').order_by('-appointment_date').first()
 
-        if latest_app:
-            return JsonResponse([{
-                'id': latest_app.appointment_id,
-                'centerName': latest_app.hospital.hospital_name if latest_app.hospital else "Main Center",
-                'date': latest_app.appointment_date.strftime('%Y-%m-%d'),
-                'time': "09:00 AM", # Replace with actual time field if your model has one
-                'status': latest_app.status # Values: 'Pending', 'Confirmed', 'Rejected', etc.
-            }], safe=False)
+        # Return all appointments so frontend .find() works correctly
+        appointments = AppointmentTbl.objects.filter(donor=donor).exclude(status='Fulfilled').order_by('appointment_date')
 
-        return JsonResponse([], safe=False)
+        data = []
+        for app in appointments:
+            data.append({
+                'id': app.appointment_id,
+                'centerName': app.hospital.hospital_name if app.hospital else "Main Center",
+                'date': app.appointment_date.strftime('%Y-%m-%d') if app.appointment_date else "",
+                'time': app.appointment_date.strftime('%I:%M %p') if app.appointment_date else "",
+                'status': app.status
+            })
+
+        return JsonResponse(data, safe=False)
 
     except Exception as e:
-        print(f"Error fetching appointment: {e}")
+        print(f"Error fetching appointments: {e}")
         return JsonResponse([], safe=False)
     
 def donor_history_list(request):

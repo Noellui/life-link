@@ -19,7 +19,6 @@ urlpatterns = [
     path('donor/profile/', views.donor_profile_view, name='donor_profile'),
     path('donor/requests/', views.active_requests, name='active_requests'), 
     path('donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
-    path('api/donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
     path('donor/history/', views.donor_history_list, name='donor_history'),
     path('donor/register-event/', views.register_for_event, name='register_event'),
     path('donor/appointments/<int:appointment_id>/cancel/', views.cancel_appointment, name='cancel_appointment'),
