@@ -1,22 +1,272 @@
 import React, { useState, useEffect } from 'react';
 
 // ============================================================
-// FEATURE 1: Real PDF Certificate Generation
-// Uses jsPDF (already a project dependency) to produce a
-// properly formatted donation certificate that downloads as a file.
-// The backend endpoint /api/donor/certificate/<id>/ provides
-// verified data; we fall back to local data if unavailable.
+// HTML/CSS Print Certificate Function
 // ============================================================
+const printCertificate = (record, userName) => {
+  if (!record || !record.id) {
+    alert('Invalid donation record');
+    return;
+  }
 
+  const donorName = userName || 'Valued Donor';
+  const donationDate = record.date || 'N/A';
+  const hospital = record.location || 'LifeLink Center';
+  const certId = `LL-${String(record.id).padStart(5, '0')}`;
+  const issueDate = new Date().toLocaleDateString('en-GB');
+
+  const printWindow = window.open('', '_blank');
+  
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>LifeLink Certificate - ${donorName}</title>
+        <style>
+            @page {
+                size: A4 landscape;
+                margin: 0; 
+            }
+            body {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                margin: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                font-family: 'Helvetica', Arial, sans-serif;
+                background-color: #fff;
+            }
+
+            :root {
+                --brand-red: #8c0000;
+                --text-dark: #282828;
+                --text-gray: #646464;
+                --border-light: #969696;
+            }
+
+            .certificate {
+                width: 297mm;
+                height: 210mm;
+                background: white;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+
+            .header-bar {
+                background-color: var(--brand-red);
+                height: 25mm;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 24pt;
+                font-weight: bold;
+            }
+
+            .frame {
+                margin: 5mm;
+                flex-grow: 1;
+                border: 2mm solid var(--brand-red);
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 10mm;
+                box-sizing: border-box;
+            }
+
+            .watermark {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(-45deg);
+                font-size: 80pt;
+                font-weight: 900;
+                color: rgba(0, 0, 0, 0.03);
+                z-index: 0;
+                white-space: nowrap;
+                pointer-events: none;
+            }
+
+            .content {
+                z-index: 1;
+                text-align: center;
+                width: 100%;
+            }
+
+            h1 {
+                font-family: 'Times New Roman', serif;
+                font-size: 36pt;
+                margin: 10mm 0 5mm 0;
+                color: var(--text-dark);
+            }
+
+            .subtitle {
+                font-size: 16pt;
+                color: var(--text-gray);
+                margin-bottom: 8mm;
+            }
+
+            .donor-name {
+                font-family: 'Times New Roman', serif;
+                font-style: italic;
+                font-size: 52pt;
+                color: var(--brand-red);
+                margin-bottom: 8mm;
+                border-bottom: 1px solid var(--brand-red);
+                display: inline-block;
+                padding: 0 20mm;
+            }
+
+            .details {
+                font-size: 14pt;
+                line-height: 1.6;
+                color: var(--text-gray);
+            }
+
+            .bottom-row {
+                margin-top: auto;
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                align-items: end;
+                padding-bottom: 10mm;
+            }
+
+            .meta-data {
+                text-align: left;
+                font-size: 10pt;
+                color: var(--text-gray);
+            }
+
+            .seal {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .seal-circle {
+                width: 30mm;
+                height: 30mm;
+                border: 0.5mm solid var(--brand-red);
+                border-radius: 50%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                font-size: 8pt;
+                font-weight: bold;
+                color: var(--brand-red);
+            }
+
+            .signature {
+                text-align: center;
+            }
+
+            .sig-line {
+                border-top: 0.5mm solid var(--border-light);
+                margin-bottom: 2mm;
+                width: 60mm;
+                margin-left: auto;
+            }
+
+            .sig-text {
+                font-size: 10pt;
+                font-weight: bold;
+            }
+
+            .sig-subtext {
+                font-size: 9pt;
+                font-style: italic;
+                color: var(--text-gray);
+            }
+
+            .footer-note {
+                font-size: 8pt;
+                color: var(--border-light);
+                position: absolute;
+                bottom: 2mm;
+                width: 100%;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="certificate">
+            <div class="header-bar">LifeLink National Blood Service</div>
+            
+            <div class="frame">
+                <div class="watermark">LIFELINK</div>
+                
+                <div class="content">
+                    <h1>CERTIFICATE OF APPRECIATION</h1>
+                    <p class="subtitle">This record of honor is proudly presented to</p>
+                    <div class="donor-name">${donorName}</div>
+                    
+                    <div class="details">
+                        For the heroic act of donating — Blood on ${donationDate}.<br>
+                        Recorded at ${hospital}.
+                    </div>
+                </div>
+
+                <div class="bottom-row">
+                    <div class="meta-data">
+                        Issued: ${issueDate}<br>
+                        Cert ID: ${certId}
+                    </div>
+
+                    <div class="seal">
+                        <div class="seal-circle">
+                            <span>OFFICIAL</span>
+                            <span>VERIFIED</span>
+                        </div>
+                    </div>
+
+                    <div class="signature">
+                        <div class="sig-line"></div>
+                        <div class="sig-text">Director of Operations</div>
+                        <div class="sig-subtext">LifeLink Authority</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-note">
+                This is a computer-generated document. No physical signature is required for validity.
+            </div>
+        </div>
+
+        <script>
+            window.onload = function() {
+                window.print();
+            };
+        </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
+// ============================================================
+// Main Component
+// ============================================================
 const DonorHistory = () => {
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({ totalDonations: 0, lastDonation: 'N/A', livesSaved: 0 });
   const [loading, setLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => {
     const fetchHistory = async () => {
-      const storedUser = JSON.parse(localStorage.getItem('user_data'));
+      const storedUser = JSON.parse(localStorage.getItem('user_data') || '{}');
       const email = storedUser?.email;
       if (!email) { setLoading(false); return; }
 
@@ -50,150 +300,6 @@ const DonorHistory = () => {
     };
     fetchHistory();
   }, []);
-
-  // ============================================================
-  // Certificate PDF Generator
-  // ============================================================
-  const generateCertificate = async (record) => {
-    setDownloadingId(record.id);
-
-    // Try backend for verified data first
-    let certData = null;
-    try {
-      const res = await fetch(`http://127.0.0.1:8000/api/donor/certificate/${record.id}/`);
-      if (res.ok) certData = await res.json();
-    } catch { /* fall through to local data */ }
-
-    // Fallback: use local record data
-    const storedUser = JSON.parse(localStorage.getItem('user_data') || '{}');
-    if (!certData) {
-      certData = {
-        donor_name: storedUser.name || 'Donor',
-        blood_type: storedUser.bloodType || '—',
-        appointment_date: record.date,
-        hospital_name: record.location,
-        appointment_id: record.id,
-      };
-    }
-
-    // Dynamic import of jsPDF — already installed in the project
-    try {
-      const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-
-      const W = 297; // A4 landscape width mm
-      const H = 210;
-
-      // ── Background ──────────────────────────────────────
-      doc.setFillColor(255, 255, 255);
-      doc.rect(0, 0, W, H, 'F');
-
-      // Dark red decorative border (outer)
-      doc.setDrawColor(180, 20, 20);
-      doc.setLineWidth(3);
-      doc.rect(8, 8, W - 16, H - 16);
-
-      // Thin inner border
-      doc.setLineWidth(0.5);
-      doc.setDrawColor(220, 60, 60);
-      doc.rect(12, 12, W - 24, H - 24);
-
-      // ── Header Band ──────────────────────────────────────
-      doc.setFillColor(180, 20, 20);
-      doc.rect(8, 8, W - 16, 28, 'F');
-
-      // Logo / Title in header
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.setFont('helvetica', 'bold');
-      doc.text('🩸 LifeLink — Blood Donation Certificate', W / 2, 26, { align: 'center' });
-
-      // ── Certificate Title ────────────────────────────────
-      doc.setTextColor(180, 20, 20);
-      doc.setFontSize(28);
-      doc.setFont('helvetica', 'bold');
-      doc.text('CERTIFICATE OF APPRECIATION', W / 2, 60, { align: 'center' });
-
-      doc.setFontSize(13);
-      doc.setTextColor(100, 100, 100);
-      doc.setFont('helvetica', 'normal');
-      doc.text('This is to certify that', W / 2, 74, { align: 'center' });
-
-      // ── Donor Name ───────────────────────────────────────
-      doc.setFontSize(30);
-      doc.setFont('times', 'bolditalic');
-      doc.setTextColor(20, 20, 20);
-      doc.text(certData.donor_name, W / 2, 92, { align: 'center' });
-
-      // Underline beneath name
-      const nameWidth = doc.getTextWidth(certData.donor_name);
-      const nameX = (W - nameWidth) / 2;
-      doc.setDrawColor(180, 20, 20);
-      doc.setLineWidth(0.7);
-      doc.line(nameX, 95, nameX + nameWidth, 95);
-
-      // ── Body Text ────────────────────────────────────────
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(60, 60, 60);
-      doc.text(
-        `voluntarily donated ${certData.blood_type || '—'} blood on ${certData.appointment_date || record.date}`,
-        W / 2, 107, { align: 'center' }
-      );
-      doc.text(`at ${certData.hospital_name || record.location}.`, W / 2, 115, { align: 'center' });
-      doc.text(
-        'Your selfless act of kindness has the potential to save up to 3 lives.',
-        W / 2, 128, { align: 'center' }
-      );
-
-      // ── Decorative Divider ───────────────────────────────
-      doc.setDrawColor(220, 180, 180);
-      doc.setLineWidth(0.3);
-      doc.line(40, 135, W - 40, 135);
-
-      // ── Signature & Stamp Area ───────────────────────────
-      // Left: Issue Date
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(80, 80, 80);
-      doc.text('Issue Date', 60, 150, { align: 'center' });
-      doc.setFont('helvetica', 'normal');
-      doc.text(new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' }), 60, 157, { align: 'center' });
-
-      // Center: Seal placeholder
-      doc.setFillColor(180, 20, 20);
-      doc.circle(W / 2, 153, 14, 'S');
-      doc.setFontSize(8);
-      doc.setTextColor(180, 20, 20);
-      doc.text('OFFICIAL', W / 2, 150, { align: 'center' });
-      doc.text('SEAL', W / 2, 156, { align: 'center' });
-
-      // Right: Authorized by
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(80, 80, 80);
-      doc.text('Authorized by', W - 60, 150, { align: 'center' });
-      doc.setFont('helvetica', 'italic');
-      doc.text('LifeLink Blood Bank Authority', W - 60, 157, { align: 'center' });
-
-      // ── Footer ───────────────────────────────────────────
-      doc.setFillColor(240, 240, 240);
-      doc.rect(8, H - 22, W - 16, 14, 'F');
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(130, 130, 130);
-      doc.text(
-        `Certificate ID: ${record.certificateId}  |  Appointment #${certData.appointment_id || record.id}  |  lifelink-project.org`,
-        W / 2, H - 13, { align: 'center' }
-      );
-
-      doc.save(`LifeLink_Certificate_${record.certificateId}.pdf`);
-    } catch (err) {
-      console.error('PDF generation error:', err);
-      alert('Could not generate certificate. Please ensure jsPDF is installed: npm install jspdf');
-    } finally {
-      setDownloadingId(null);
-    }
-  };
 
   const getStatusColor = (status) => {
     const s = status?.toLowerCase().trim();
@@ -242,7 +348,7 @@ const DonorHistory = () => {
           <div>
             <p className="font-bold text-blue-900 text-sm">Download Your Certificate</p>
             <p className="text-xs text-blue-700 mt-0.5">
-              Certificates are available for <strong>Fulfilled</strong> donations only. Click "Download PDF" to generate a personalized certificate using your verified donation data.
+              Certificates are available for <strong>Fulfilled</strong> donations only. Click "Print Certificate" to generate a personalized certificate using your verified donation data.
             </p>
           </div>
         </div>
@@ -275,25 +381,16 @@ const DonorHistory = () => {
                     <td className="px-6 py-4">
                       {record.status?.toLowerCase().trim() === 'fulfilled' ? (
                         <button
-                          onClick={() => generateCertificate(record)}
-                          disabled={downloadingId === record.id}
-                          className={`flex items-center gap-1 text-sm font-medium transition px-3 py-1 rounded-lg ${
-                            downloadingId === record.id
-                              ? 'text-gray-400 bg-gray-100 cursor-wait'
-                              : 'text-red-600 hover:bg-red-50 hover:text-red-800'
-                          }`}
+                          onClick={() => {
+                            const storedUser = JSON.parse(localStorage.getItem('user_data') || '{}');
+                            printCertificate(record, storedUser.name);
+                          }}
+                          className="flex items-center gap-1 text-sm font-bold text-red-600 hover:bg-red-50 hover:text-red-800 transition px-3 py-1 rounded-lg"
                         >
-                          {downloadingId === record.id ? (
-                            <>
-                              <span className="inline-block w-3 h-3 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></span>
-                              Generating...
-                            </>
-                          ) : (
-                            <>📄 Download PDF</>
-                          )}
+                          🖨️ Print
                         </button>
                       ) : (
-                        <span className="text-gray-400 text-sm">N/A</span>
+                        <span className="text-gray-400 text-sm italic">Not Available</span>
                       )}
                     </td>
                   </tr>

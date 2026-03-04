@@ -325,6 +325,7 @@ const DonorDashboard = () => {
                       <th className="px-6 py-3">Location</th>
                       <th className="px-6 py-3">Units</th>
                       <th className="px-6 py-3">Status</th>
+                      <th className="px-6 py-3 text-right">Certificate</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -343,6 +344,18 @@ const DonorDashboard = () => {
                           }`}>
                             {item.status}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          {item.status?.toLowerCase().trim() === 'fulfilled' ? (
+                            <button
+                              onClick={() => printCertificate(item, user.name)}
+                              className="text-red-600 hover:text-red-800 font-bold flex items-center justify-end gap-1 ml-auto"
+                            >
+                              Print <span className="text-lg">🖨️</span>
+                            </button>
+                          ) : (
+                            <span className="text-gray-400 italic">Not Available</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -461,4 +474,269 @@ const DonorDashboard = () => {
   );
 };
 
+const printCertificate = (record, userName) => {
+  if (!record || !record.id) {
+    alert('Invalid donation record');
+    return;
+  }
+
+  const donorName = userName || 'Valued Donor';
+  const donationDate = record.date || 'N/A';
+  const hospital = record.location || 'LifeLink Center';
+  const certId = `LL-${String(record.id).padStart(5, '0')}`;
+  const issueDate = new Date().toLocaleDateString('en-GB');
+
+  // Open a new window for printing
+  const printWindow = window.open('', '_blank');
+  
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>LifeLink Certificate - ${donorName}</title>
+        <style>
+            /* FORCE LANDSCAPE AND BACKGROUND COLORS FOR PRINTING */
+            @page {
+                size: A4 landscape;
+                margin: 0; 
+            }
+            body {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                margin: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                font-family: 'Helvetica', Arial, sans-serif;
+                background-color: #fff;
+            }
+
+            :root {
+                --brand-red: #8c0000;
+                --text-dark: #282828;
+                --text-gray: #646464;
+                --border-light: #969696;
+            }
+
+            /* Certificate Container */
+            .certificate {
+                width: 297mm;
+                height: 210mm;
+                background: white;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+
+            /* Top Header Bar */
+            .header-bar {
+                background-color: var(--brand-red);
+                height: 25mm;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-size: 24pt;
+                font-weight: bold;
+            }
+
+            /* Outer Red Frame */
+            .frame {
+                margin: 5mm;
+                flex-grow: 1;
+                border: 2mm solid var(--brand-red);
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 10mm;
+                box-sizing: border-box;
+            }
+
+            /* Watermark Background */
+            .watermark {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(-45deg);
+                font-size: 80pt;
+                font-weight: 900;
+                color: rgba(0, 0, 0, 0.03);
+                z-index: 0;
+                white-space: nowrap;
+                pointer-events: none;
+            }
+
+            /* Content Sections */
+            .content {
+                z-index: 1;
+                text-align: center;
+                width: 100%;
+            }
+
+            h1 {
+                font-family: 'Times New Roman', serif;
+                font-size: 36pt;
+                margin: 10mm 0 5mm 0;
+                color: var(--text-dark);
+            }
+
+            .subtitle {
+                font-size: 16pt;
+                color: var(--text-gray);
+                margin-bottom: 8mm;
+            }
+
+            .donor-name {
+                font-family: 'Times New Roman', serif;
+                font-style: italic;
+                font-size: 52pt;
+                color: var(--brand-red);
+                margin-bottom: 8mm;
+                border-bottom: 1px solid var(--brand-red);
+                display: inline-block;
+                padding: 0 20mm;
+            }
+
+            .details {
+                font-size: 14pt;
+                line-height: 1.6;
+                color: var(--text-gray);
+            }
+
+            /* Bottom Section: ID, Seal, Signature */
+            .bottom-row {
+                margin-top: auto;
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                align-items: end;
+                padding-bottom: 10mm;
+            }
+
+            .meta-data {
+                text-align: left;
+                font-size: 10pt;
+                color: var(--text-gray);
+            }
+
+            .seal {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .seal-circle {
+                width: 30mm;
+                height: 30mm;
+                border: 0.5mm solid var(--brand-red);
+                border-radius: 50%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                font-size: 8pt;
+                font-weight: bold;
+                color: var(--brand-red);
+            }
+
+            .signature {
+                text-align: center;
+            }
+
+            .sig-line {
+                border-top: 0.5mm solid var(--border-light);
+                margin-bottom: 2mm;
+                width: 60mm;
+                margin-left: auto;
+            }
+
+            .sig-text {
+                font-size: 10pt;
+                font-weight: bold;
+            }
+
+            .sig-subtext {
+                font-size: 9pt;
+                font-style: italic;
+                color: var(--text-gray);
+            }
+
+            .footer-note {
+                font-size: 8pt;
+                color: var(--border-light);
+                position: absolute;
+                bottom: 2mm;
+                width: 100%;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="certificate">
+            <div class="header-bar">LifeLink National Blood Service</div>
+            
+            <div class="frame">
+                <div class="watermark">LIFELINK</div>
+                
+                <div class="content">
+                    <h1>CERTIFICATE OF APPRECIATION</h1>
+                    <p class="subtitle">This record of honor is proudly presented to</p>
+                    <div class="donor-name">${donorName}</div>
+                    
+                    <div class="details">
+                        For the heroic act of donating — Blood on ${donationDate}.<br>
+                        Recorded at ${hospital}.
+                    </div>
+                </div>
+
+                <div class="bottom-row">
+                    <div class="meta-data">
+                        Issued: ${issueDate}<br>
+                        Cert ID: ${certId}
+                    </div>
+
+                    <div class="seal">
+                        <div class="seal-circle">
+                            <span>OFFICIAL</span>
+                            <span>VERIFIED</span>
+                        </div>
+                    </div>
+
+                    <div class="signature">
+                        <div class="sig-line"></div>
+                        <div class="sig-text">Director of Operations</div>
+                        <div class="sig-subtext">LifeLink Authority</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-note">
+                This is a computer-generated document. No physical signature is required for validity.
+            </div>
+        </div>
+
+        <script>
+            // Automatically trigger print dialog once loaded
+            window.onload = function() {
+                window.print();
+                // Optional: Close window after printing
+                // window.onafterprint = function() { window.close(); }
+            };
+        </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
 export default DonorDashboard;
+export { printCertificate };
