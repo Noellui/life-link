@@ -23,8 +23,14 @@ urlpatterns = [
     path('donor/history/', views.donor_history_list, name='donor_history'),
     path('donor/register-event/', views.register_for_event, name='register_event'),
     path('donor/appointments/<int:appointment_id>/cancel/', views.cancel_appointment, name='cancel_appointment'),
-    # NEW: "I Can Donate" interest registration endpoint
-    path('donor/interest/', views.donor_interest_view, name='donor_interest'),
+    # NEW: "I Can Donate" interest registration endpoint (server-side log)
+    path('donor/interest/', views.express_donor_interest, name='donor_interest'),
+    # --- FEATURE 1: CERTIFICATES ---
+    path('donor/certificate/<int:appointment_id>/', views.get_certificate_data, name='certificate_data'),
+    # --- FEATURE 4: NOTIFICATIONS ---
+    path('donor/notifications/', views.get_donor_notifications, name='donor_notifications'),
+    # --- FEATURE 5: ELIGIBILITY ---
+    path('donor/eligibility/', views.get_donor_eligibility, name='donor_eligibility'),
 
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),
