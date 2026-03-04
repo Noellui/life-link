@@ -4,21 +4,21 @@ import { Link, useNavigate } from 'react-router-dom';
 const DonorDashboard = () => {
   const navigate = useNavigate();
 
-  // --- STATE MANAGEMENT ---
   const [user, setUser] = useState({
     name: "Loading...",
-    email: "", 
+    email: "",
     bloodType: "...",
-    city: "Vadodara",
+    city: "...",
     id: "..."
   });
 
   const [nearbyRequests, setNearbyRequests] = useState([]);
   const [stats, setStats] = useState({ total: 0, lives: 0, lastDate: 'N/A' });
   const [myAppointment, setMyAppointment] = useState(null);
-  const [donationHistory, setDonationHistory] = useState([]); 
+  const [donationHistory, setDonationHistory] = useState([]);
+  // Track which requests the donor has already expressed interest in
+  const [interestedRequestIds, setInterestedRequestIds] = useState([]);
 
-  // --- HELPER: Get Logged-In User ---
   const getLoggedInUser = () => {
     const storedUser = localStorage.getItem('user_data');
     return storedUser ? JSON.parse(storedUser) : null;
@@ -54,16 +54,14 @@ const DonorDashboard = () => {
           setNearbyRequests(reqData);
         }
 
-        // --- 3. FETCH UPCOMING APPOINTMENTS ---
+        // FIX: Use the single canonical path (no /api/ prefix duplication)
         const appRes = await fetch(`http://127.0.0.1:8000/api/donor/appointments/?email=${email}`);
         if (appRes.ok) {
           const appData = await appRes.json();
-          // Find the first appointment that isn't canceled to show in the 'Upcoming' card
           const activeAppointment = appData.find(app => app.status !== 'Canceled');
           setMyAppointment(activeAppointment || null);
         }
 
-        // --- 4. FETCH FULL HISTORY (ALL STATUSES) ---
         const histRes = await fetch(`http://127.0.0.1:8000/api/donor/history/?email=${email}`);
         if (histRes.ok) {
           const histData = await histRes.json();
@@ -78,7 +76,6 @@ const DonorDashboard = () => {
     fetchDashboardData();
   }, [navigate]);
 
-  // --- HANDLE CANCEL ---
   const handleCancel = async (appointmentId) => {
     if (!window.confirm("Are you sure you want to cancel this appointment?")) return;
 
@@ -90,7 +87,7 @@ const DonorDashboard = () => {
 
       if (response.ok) {
         alert("Appointment canceled successfully.");
-        window.location.reload(); 
+        window.location.reload();
       } else {
         alert("Failed to cancel appointment.");
       }
@@ -99,8 +96,49 @@ const DonorDashboard = () => {
     }
   };
 
-  const handleDonateClick = (reqId) => {
-    alert(`Thank you! The hospital has been notified that you are interested in Request #${reqId}.`);
+  /**
+   * FIX: "I Can Donate" now calls the real backend endpoint instead of alert().
+   * The backend creates a Pending appointment linking this donor to the
+   * hospital that owns the blood request, so hospital staff can follow up.
+   */
+  const handleDonateClick = async (requestId) => {
+    const loggedInUser = getLoggedInUser();
+    if (!loggedInUser || !loggedInUser.email) {
+      alert("Please log in to express your interest.");
+      return navigate('/login');
+    }
+
+    // Optimistic UI: disable button immediately
+    setInterestedRequestIds(prev => [...prev, requestId]);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/donor/interest/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loggedInUser.email,
+          requestId: requestId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok || response.status === 200) {
+        if (data.alreadyExists) {
+          alert(`You already have a pending appointment with this hospital. Check your upcoming appointments.`);
+        } else {
+          alert(`✅ Thank you! The hospital has been notified of your interest in Request #${requestId}. They will confirm your appointment shortly.`);
+        }
+      } else {
+        // Rollback optimistic update on failure
+        setInterestedRequestIds(prev => prev.filter(id => id !== requestId));
+        alert(`Could not register interest: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error("Donate interest error:", err);
+      setInterestedRequestIds(prev => prev.filter(id => id !== requestId));
+      alert("Connection failed. Please try again.");
+    }
   };
 
   return (
@@ -119,7 +157,7 @@ const DonorDashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
-        
+
         {/* STATS CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
@@ -137,7 +175,7 @@ const DonorDashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           <div className="lg:col-span-2 space-y-8">
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -145,14 +183,34 @@ const DonorDashboard = () => {
                 Urgent Blood Needed
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {nearbyRequests.length > 0 ? nearbyRequests.map((req) => (
-                  <div key={req.id} className="bg-white rounded-xl shadow-sm border border-red-100 p-5 hover:shadow-md transition">
-                    <div className="flex justify-between items-start mb-3"><span className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">{req.urgency}</span></div>
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">{req.patientName}</h3>
-                    <p className="text-sm text-gray-500 mb-4">{req.city} • <strong>{req.bloodGroup}</strong> ({req.units} Units)</p>
-                    <button onClick={() => handleDonateClick(req.id)} className="w-full bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700">I Can Donate</button>
-                  </div>
-                )) : (
+                {nearbyRequests.length > 0 ? nearbyRequests.map((req) => {
+                  const alreadyInterested = interestedRequestIds.includes(req.id);
+                  return (
+                    <div key={req.id} className="bg-white rounded-xl shadow-sm border border-red-100 p-5 hover:shadow-md transition">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-xs font-bold">{req.urgency}</span>
+                        {/* FIX: City now shows real data from backend */}
+                        <span className="text-xs text-gray-400">{req.city}</span>
+                      </div>
+                      <h3 className="text-lg font-bold text-gray-900 mb-1">{req.patientName}</h3>
+                      <p className="text-sm text-gray-500 mb-4">
+                        <strong>{req.bloodGroup}</strong> • {req.units} {req.units === '1' ? 'Unit' : 'Units'} needed
+                      </p>
+                      {/* FIX: Button now calls real API and shows feedback state */}
+                      <button
+                        onClick={() => handleDonateClick(req.id)}
+                        disabled={alreadyInterested}
+                        className={`w-full font-bold py-2 rounded-lg transition ${
+                          alreadyInterested
+                            ? 'bg-green-100 text-green-700 cursor-default border border-green-200'
+                            : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
+                      >
+                        {alreadyInterested ? '✓ Interest Sent' : 'I Can Donate'}
+                      </button>
+                    </div>
+                  );
+                }) : (
                   <div className="col-span-2 bg-white p-6 rounded-xl text-center text-gray-500 border border-gray-200 border-dashed">
                     No urgent blood requests at the moment. Good news!
                   </div>
@@ -160,34 +218,41 @@ const DonorDashboard = () => {
               </div>
             </div>
 
-            {/* DONATION HISTORY TABLE (NOW SHOWING ALL STATUSES) */}
+            {/* DONATION HISTORY TABLE */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
                 <h3 className="text-lg font-bold text-gray-900">Donation History</h3>
                 <Link to="/history" className="text-red-600 text-sm font-medium hover:underline">View All</Link>
               </div>
-              
+
               {donationHistory.length > 0 ? (
                 <table className="w-full text-left text-sm text-gray-600">
-                  <thead className="bg-gray-50 text-gray-900 font-medium"><tr><th className="px-6 py-3">Date</th><th className="px-6 py-3">Location</th><th className="px-6 py-3">Units</th><th className="px-6 py-3">Status</th></tr></thead>
+                  <thead className="bg-gray-50 text-gray-900 font-medium">
+                    <tr>
+                      <th className="px-6 py-3">Date</th>
+                      <th className="px-6 py-3">Location</th>
+                      {/* FIX: Column now shows dynamic donationType from backend */}
+                      <th className="px-6 py-3">Type</th>
+                      <th className="px-6 py-3">Status</th>
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-gray-100">
                     {donationHistory.map((item) => (
                       <tr key={item.id}>
                         <td className="px-6 py-4">{item.date}</td>
                         <td className="px-6 py-4">{item.location}</td>
-                        <td className="px-6 py-4">{item.units} Unit</td>
+                        <td className="px-6 py-4">{item.donationType || 'Whole Blood'}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            // Using .toLowerCase() and .trim() makes the check bulletproof
                             item.status?.toLowerCase().trim() === 'fulfilled' ? 'bg-green-100 text-green-800' :
                             item.status?.toLowerCase().trim() === 'pending'   ? 'bg-yellow-100 text-yellow-800' :
                             item.status?.toLowerCase().trim() === 'confirmed' ? 'bg-blue-100 text-blue-800' :
                             item.status?.toLowerCase().trim() === 'canceled'  ? 'bg-gray-100 text-gray-800' :
-                            'bg-red-100 text-red-800' // This remains for 'Rejected' or 'Screening Failed'
-                            }`}>
-                              {item.status}
-                              </span>
-                          </td>
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {item.status}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -204,25 +269,24 @@ const DonorDashboard = () => {
           <div className="space-y-6">
             {myAppointment ? (
               <div className={`rounded-xl shadow-md border overflow-hidden ${
-                myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' 
-                  ? 'border-gray-200 bg-gray-50' 
+                myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed'
+                  ? 'border-gray-200 bg-gray-50'
                   : 'border-red-100 bg-white'
               }`}>
                 <div className={`px-6 py-3 ${
-                  myAppointment.status === 'Confirmed' ? 'bg-green-600' : 
-                  myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' ? 'bg-gray-500' : 
+                  myAppointment.status === 'Confirmed' ? 'bg-green-600' :
+                  myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' ? 'bg-gray-500' :
                   'bg-yellow-500'
                 }`}>
                   <h3 className="text-white font-bold text-sm uppercase tracking-wide">
-                    {
-                    myAppointment.status === 'Confirmed' ? 'Appointment Confirmed ✅' : 
-                     myAppointment.status === 'Rejected' ? 'Appointment Declined ❌' : 
-                     myAppointment.status === 'Pending' ? 'Upcoming appointment ⏳' : 
-                     myAppointment.status === 'Screening Failed' ? 'Screening Unsuccessful ⚠️' : 
+                    {myAppointment.status === 'Confirmed' ? 'Appointment Confirmed ✅' :
+                     myAppointment.status === 'Rejected' ? 'Appointment Declined ❌' :
+                     myAppointment.status === 'Pending' ? 'Upcoming Appointment ⏳' :
+                     myAppointment.status === 'Screening Failed' ? 'Screening Unsuccessful ⚠️' :
                      'Request Pending ⏳'}
                   </h3>
                 </div>
-                
+
                 <div className="p-6">
                   {myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' ? (
                     <div>
@@ -230,8 +294,8 @@ const DonorDashboard = () => {
                         {myAppointment.status === 'Screening Failed' ? 'Donation Deferred' : 'We are sorry'}
                       </p>
                       <p className="text-sm text-gray-600 leading-relaxed">
-                        {myAppointment.status === 'Screening Failed' 
-                          ? `Thank you for visiting ${myAppointment.centerName}. You were marked ineligible during the health screening today. Please check with the center for when you can try again.`
+                        {myAppointment.status === 'Screening Failed'
+                          ? `Thank you for visiting ${myAppointment.centerName}. You were marked ineligible during the health screening. Please check with the center for when you can try again.`
                           : `The hospital could not accept your appointment for ${myAppointment.date}. This is usually due to full capacity.`
                         }
                       </p>
@@ -243,9 +307,10 @@ const DonorDashboard = () => {
                     <div className="flex items-start space-x-4">
                       <div className="flex-col text-center bg-gray-100 p-2 rounded-lg min-w-[60px]">
                         <span className="block text-xs uppercase text-gray-500 font-bold">Date</span>
-                        <span className="block text-xl font-bold text-gray-900">{myAppointment.date.split('-')[2]}</span>
+                        <span className="block text-xl font-bold text-gray-900">{myAppointment.date?.split('-')[2]}</span>
                       </div>
                       <div>
+                        {/* FIX: time now shows real value from DB (e.g. "02:30 PM") */}
                         <p className="text-lg font-bold text-gray-900">{myAppointment.time}</p>
                         <p className="text-gray-600 text-sm mt-1">{myAppointment.centerName}</p>
                         {myAppointment.status === 'Pending' && (
@@ -254,10 +319,10 @@ const DonorDashboard = () => {
                           </p>
                         )}
                         <div className="mt-3 flex space-x-2">
-                           <button onClick={() => navigate('/schedule')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded transition">Reschedule</button>
-                           {(myAppointment.status === 'Pending' || myAppointment.status === 'Confirmed') && (
-                            <button 
-                              onClick={() => handleCancel(myAppointment.id)} 
+                          <button onClick={() => navigate('/schedule')} className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded transition">Reschedule</button>
+                          {(myAppointment.status === 'Pending' || myAppointment.status === 'Confirmed') && (
+                            <button
+                              onClick={() => handleCancel(myAppointment.id)}
                               className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded transition font-medium"
                             >
                               Cancel
