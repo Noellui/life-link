@@ -44,6 +44,7 @@ def login_view(request):
             return JsonResponse({'error': str(e)}, status=400)
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
+
 @csrf_exempt
 def register_view(request):
     if request.method == 'POST':
@@ -70,7 +71,10 @@ def register_view(request):
                 new_user_id = cursor.lastrowid
 
                 if role == 'Donor':
-                    cursor.execute("SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s", [data.get('bloodGroup')])
+                    cursor.execute(
+                        "SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s",
+                        [data.get('bloodGroup')]
+                    )
                     blood_res = cursor.fetchone()
                     blood_id = blood_res[0] if blood_res else None
 
@@ -131,6 +135,7 @@ def verify_email(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 # -------------------------------------------------------------------------
 # DONOR DASHBOARD & PROFILE APIS
 # -------------------------------------------------------------------------
@@ -147,23 +152,32 @@ def donor_dashboard_stats(request):
             if b_obj:
                 blood_type = b_obj.blood_type
 
-        fulfilled_count = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').count() if donor else 0
-        last_donation = AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').order_by('-appointment_date').first()
+        fulfilled_count = (
+            AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').count()
+            if donor else 0
+        )
+        last_donation = (
+            AppointmentTbl.objects
+            .filter(donor=donor, status='Fulfilled')
+            .order_by('-appointment_date')
+            .first()
+        )
 
         return JsonResponse({
             'stats': {
                 'total': fulfilled_count,
                 'lives': fulfilled_count * 3,
-                'lastDate': last_donation.appointment_date.strftime('%Y-%m-%d') if last_donation else 'N/A'
+                'lastDate': (
+                    last_donation.appointment_date.strftime('%Y-%m-%d')
+                    if last_donation else 'N/A'
+                )
             },
             'user_details': {
-                'name': user.full_name,
-                'id': donor.donor_id if donor else "N/A",
+                'name':      user.full_name,
+                'id':        donor.donor_id if donor else "N/A",
                 'bloodType': blood_type,
-                # FIX: Return actual city from donor record, with a meaningful fallback
-                'city': donor.city if (donor and donor.city) else "Not Set",
-                # FIX: Return actual weight instead of 'Not Available'
-                'weight': donor.weight if (donor and donor.weight) else None,
+                'city':      donor.city if (donor and donor.city) else "Not Set",
+                'weight':    donor.weight if (donor and donor.weight) else None,
             }
         })
     except Exception as e:
@@ -173,12 +187,15 @@ def donor_dashboard_stats(request):
 def active_requests(request):
     """
     Returns active Pending blood requests for display on the Donor Dashboard.
-    FIX: City is now fetched from the linked hospital record instead of being hardcoded.
+    City is fetched from the linked hospital record instead of being hardcoded.
     """
     try:
-        requests = BloodRequestTbl.objects.select_related(
-            'recipient', 'hospital'
-        ).filter(status='Pending').order_by('-request_date')[:4]
+        requests = (
+            BloodRequestTbl.objects
+            .select_related('recipient', 'hospital')
+            .filter(status='Pending')
+            .order_by('-request_date')[:4]
+        )
 
         data = []
         for req in requests:
@@ -186,21 +203,23 @@ def active_requests(request):
             if req.recipient and req.recipient.full_name:
                 p_name = req.recipient.full_name
 
-            # FIX: Derive city from the linked hospital's city field, with a fallback chain
             city = "Unknown"
             if req.hospital and req.hospital.city:
                 city = req.hospital.city
-            elif req.recipient and hasattr(req.recipient, 'address') and req.recipient.address:
-                # Last resort: show first part of recipient address
+            elif (
+                req.recipient
+                and hasattr(req.recipient, 'address')
+                and req.recipient.address
+            ):
                 city = req.recipient.address.split(',')[-1].strip()
 
             data.append({
-                'id': int(req.request_id),
+                'id':          int(req.request_id),
                 'patientName': str(p_name),
-                'bloodGroup': str(req.blood_group),
-                'units': str(req.units),
-                'urgency': str(req.urgency),
-                'city': city,  # FIX: now dynamic, not hardcoded
+                'bloodGroup':  str(req.blood_group),
+                'units':       str(req.units),
+                'urgency':     str(req.urgency),
+                'city':        city,
             })
         return JsonResponse(data, safe=False)
     except Exception as e:
@@ -210,8 +229,7 @@ def active_requests(request):
 def donor_appointments_list(request):
     """
     Returns the most recent non-fulfilled appointment for the donor.
-    FIX: Appointment time is now derived from the appointment_date DateTimeField
-         instead of being hardcoded to '09:00 AM'.
+    Appointment time is derived from the appointment_date DateTimeField.
     """
     email = request.GET.get('email')
 
@@ -224,20 +242,26 @@ def donor_appointments_list(request):
         if not donor:
             return JsonResponse([], safe=False)
 
-        latest_app = AppointmentTbl.objects.filter(
-            donor=donor
-        ).exclude(status='Fulfilled').order_by('-appointment_date').first()
+        latest_app = (
+            AppointmentTbl.objects
+            .filter(donor=donor)
+            .exclude(status='Fulfilled')
+            .order_by('-appointment_date')
+            .first()
+        )
 
         if latest_app:
-            # FIX: Extract the time component from the stored DateTimeField
-            appt_dt = latest_app.appointment_date
+            appt_dt  = latest_app.appointment_date
             time_str = appt_dt.strftime('%I:%M %p') if appt_dt else "Time N/A"
 
             return JsonResponse([{
-                'id': latest_app.appointment_id,
-                'centerName': latest_app.hospital.hospital_name if latest_app.hospital else "Main Center",
-                'date': appt_dt.strftime('%Y-%m-%d') if appt_dt else "N/A",
-                'time': time_str,  # FIX: real time from DB, not hardcoded
+                'id':         latest_app.appointment_id,
+                'centerName': (
+                    latest_app.hospital.hospital_name
+                    if latest_app.hospital else "Main Center"
+                ),
+                'date':   appt_dt.strftime('%Y-%m-%d') if appt_dt else "N/A",
+                'time':   time_str,
                 'status': latest_app.status
             }], safe=False)
 
@@ -251,28 +275,25 @@ def donor_appointments_list(request):
 def donor_history_list(request):
     email = request.GET.get('email')
     try:
-        user = UserRegistrationTbl.objects.filter(email=email).first()
+        user  = UserRegistrationTbl.objects.filter(email=email).first()
         donor = DonorTbl.objects.filter(user=user).first()
-
-        hist = AppointmentTbl.objects.filter(donor=donor).order_by('-appointment_date')
+        hist  = AppointmentTbl.objects.filter(donor=donor).order_by('-appointment_date')
 
         data = []
         for h in hist:
-            # Attempt to look up the blood type for fulfilled donations
-            blood_type_name = "Whole Blood"  # default
+            blood_type_name = "Whole Blood"
             if h.status == 'Fulfilled' and donor and donor.blood_id:
                 b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
                 if b_obj:
                     blood_type_name = f"Whole Blood ({b_obj.blood_type})"
 
             data.append({
-                'id': h.appointment_id,
-                'date': h.appointment_date.strftime('%Y-%m-%d'),
-                'location': h.hospital.hospital_name if h.hospital else "Unknown Center",
-                'units': "1",
-                # FIX: donationType now carries blood group info when available
+                'id':           h.appointment_id,
+                'date':         h.appointment_date.strftime('%Y-%m-%d'),
+                'location':     h.hospital.hospital_name if h.hospital else "Unknown Center",
+                'units':        "1",
                 'donationType': blood_type_name,
-                'status': h.status
+                'status':       h.status
             })
         return JsonResponse(data, safe=False)
     except Exception:
@@ -282,11 +303,10 @@ def donor_history_list(request):
 @csrf_exempt
 def donor_profile_view(request):
     email = request.GET.get('email')
-    user = UserRegistrationTbl.objects.filter(email=email).first()
+    user  = UserRegistrationTbl.objects.filter(email=email).first()
     donor = DonorTbl.objects.filter(user=user).first()
 
     if request.method == 'GET':
-        # FIX: Include blood type name for display in the profile form
         blood_type_name = ""
         if donor and donor.blood_id:
             b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
@@ -294,27 +314,28 @@ def donor_profile_view(request):
                 blood_type_name = b_obj.blood_type
 
         return JsonResponse({
-            'fullName': user.full_name,
-            'email': user.email,
-            'phone': user.contact_no,
-            'dob': donor.dob.strftime('%Y-%m-%d') if (donor and donor.dob) else "",
-            'address': donor.address if donor else "",
-            'city': donor.city if donor else "",
-            'weight': donor.weight if donor else "",
-            'gender': donor.gender if donor else "",
-            'bloodGroup': blood_type_name,  # FIX: now sourced from DB join
+            'fullName':   user.full_name,
+            'email':      user.email,
+            'phone':      user.contact_no,
+            'dob':        donor.dob.strftime('%Y-%m-%d') if (donor and donor.dob) else "",
+            'address':    donor.address if donor else "",
+            'city':       donor.city if donor else "",
+            'weight':     donor.weight if donor else "",
+            'gender':     donor.gender if donor else "",
+            'bloodGroup': blood_type_name,
         })
+
     elif request.method == 'PUT':
         data = json.loads(request.body)
-        user.full_name = data.get('fullName', user.full_name)
+        user.full_name  = data.get('fullName', user.full_name)
         user.contact_no = data.get('phone', user.contact_no)
         user.save()
         if donor:
             donor.address = data.get('address', donor.address)
-            donor.city = data.get('city', donor.city)
-            donor.dob = data.get('dob', donor.dob)
-            donor.weight = data.get('weight', donor.weight)
-            donor.gender = data.get('gender', donor.gender)
+            donor.city    = data.get('city', donor.city)
+            donor.dob     = data.get('dob', donor.dob)
+            donor.weight  = data.get('weight', donor.weight)
+            donor.gender  = data.get('gender', donor.gender)
             donor.save()
         return JsonResponse({'message': 'Profile updated'})
 
@@ -323,11 +344,11 @@ def donor_profile_view(request):
 def register_for_event(request):
     if request.method == 'POST':
         try:
-            data = json.loads(request.body)
-            email = data.get('email')
+            data     = json.loads(request.body)
+            email    = data.get('email')
             event_id = data.get('eventId')
 
-            user = UserRegistrationTbl.objects.filter(email=email).first()
+            user  = UserRegistrationTbl.objects.filter(email=email).first()
             donor = DonorTbl.objects.filter(user=user).first()
             event = EventTbl.objects.filter(event_id=event_id).first()
 
@@ -335,20 +356,18 @@ def register_for_event(request):
                 return JsonResponse({'error': 'Profile or Event not found.'}, status=404)
 
             with connection.cursor() as cursor:
-                sql = """
+                cursor.execute("""
                     INSERT INTO appointment_tbl
                     (donor_id, event_id, hospital_id, appointment_date, status, health_questionnaire_data)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                """
-                params = [
+                """, [
                     donor.donor_id,
                     event.event_id,
                     event.hospital_id,
                     event.event_date or timezone.now(),
                     'Pending',
                     '{}'
-                ]
-                cursor.execute(sql, params)
+                ])
 
             if event.seats_available and event.seats_available > 0:
                 event.seats_available -= 1
@@ -393,315 +412,98 @@ def cancel_appointment(request, appointment_id):
 
 
 # -------------------------------------------------------------------------
-# NEW: DONOR INTEREST / "I CAN DONATE" ENDPOINT
+# FEATURE 3: DONOR INTEREST — "I CAN DONATE" ENDPOINT
 # -------------------------------------------------------------------------
 
 @csrf_exempt
 def donor_interest_view(request):
     """
-    NEW ENDPOINT: Called when a donor clicks "I Can Donate" on a blood request.
+    POST { email, requestId }
     Records the donor's interest by creating a pending appointment linked
     to the hospital that owns the request.
-    """
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            email = data.get('email')
-            request_id = data.get('requestId')
-
-            if not email or not request_id:
-                return JsonResponse({'error': 'email and requestId are required.'}, status=400)
-
-            # 1. Resolve donor from email
-            user = UserRegistrationTbl.objects.filter(email=email).first()
-            if not user:
-                return JsonResponse({'error': 'User not found.'}, status=404)
-
-            donor = DonorTbl.objects.filter(user=user).first()
-            if not donor:
-                return JsonResponse({'error': 'Donor profile not found.'}, status=404)
-
-            # 2. Resolve the blood request
-            blood_request = BloodRequestTbl.objects.select_related('hospital').filter(
-                request_id=request_id
-            ).first()
-            if not blood_request:
-                return JsonResponse({'error': 'Blood request not found.'}, status=404)
-
-            # 3. Check donor does not already have a Pending/Confirmed appointment
-            #    for this same hospital to avoid duplicate submissions
-            hospital_id = blood_request.hospital_id if blood_request.hospital_id else None
-            if hospital_id:
-                existing = AppointmentTbl.objects.filter(
-                    donor=donor,
-                    hospital_id=hospital_id,
-                    status__in=['Pending', 'Confirmed']
-                ).first()
-                if existing:
-                    return JsonResponse({
-                        'message': 'You already have a pending appointment with this hospital.',
-                        'alreadyExists': True
-                    }, status=200)
-
-            # 4. Create a new appointment (Pending) so the hospital sees the donor's interest
-            with connection.cursor() as cursor:
-                sql = """
-                    INSERT INTO appointment_tbl
-                    (donor_id, hospital_id, appointment_date, status, health_questionnaire_data)
-                    VALUES (%s, %s, %s, %s, %s)
-                """
-                cursor.execute(sql, [
-                    donor.donor_id,
-                    hospital_id,
-                    timezone.now() + datetime.timedelta(days=1),  # tentative next-day date
-                    'Pending',
-                    json.dumps({'interestedInRequestId': request_id})
-                ])
-
-            return JsonResponse({
-                'message': 'Interest registered! The hospital has been notified.',
-                'requestId': request_id
-            }, status=201)
-
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
-
-
-# -------------------------------------------------------------------------
-# ADMIN DASHBOARD & REPORTS
-# -------------------------------------------------------------------------
-
-def admin_dashboard_stats(request):
-    try:
-        stats = {
-            'donors': UserRegistrationTbl.objects.filter(user_role='Donor').count(),
-            'hospitals': UserRegistrationTbl.objects.filter(user_role='Hospital').count(),
-            'recipients': UserRegistrationTbl.objects.filter(user_role='Recipient').count(),
-            'total_units': BloodStorageTbl.objects.aggregate(total=Sum('quantity'))['total'] or 0,
-            'pending_requests': BloodRequestTbl.objects.filter(status='Pending').count()
-        }
-        inventory = []
-        for bt in BloodTypeTbl.objects.all():
-            count = BloodStorageTbl.objects.filter(blood_id=bt.blood_id).aggregate(total=Sum('quantity'))['total'] or 0
-            inventory.append({
-                'type': bt.blood_type, 'count': count, 'capacity': 100,
-                'status': 'Critical' if count == 0 else ('Low' if count < 10 else 'Stable')
-            })
-        activity = []
-        for i in range(3):
-            d = datetime.date.today() - datetime.timedelta(days=i * 30)
-            don = AppointmentTbl.objects.filter(status='Fulfilled', appointment_date__month=d.month).count()
-            req = BloodRequestTbl.objects.filter(request_date__month=d.month).count()
-            activity.append({
-                'month': d.strftime('%B'), 'donations': don, 'requests': req, 'outcome': f"{don - req:+}"
-            })
-        return JsonResponse({'stats': stats, 'inventory': inventory, 'monthly_activity': activity})
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-def user_list(request):
-    users = UserRegistrationTbl.objects.values('user_id', 'full_name', 'email', 'user_role', 'status')
-    return JsonResponse(list(users), safe=False)
-
-
-@csrf_exempt
-def delete_user(request, user_id):
-    UserRegistrationTbl.objects.filter(user_id=user_id).update(status='Banned')
-    return JsonResponse({'message': 'User banned'})
-
-
-# -------------------------------------------------------------------------
-# EVENTS & HOSPITAL ACTIONS
-# -------------------------------------------------------------------------
-
-def event_list(request):
-    try:
-        events = EventTbl.objects.select_related('hospital').all().order_by('-event_date')
-        data = [{
-            'id': e.event_id, 'title': e.event_title, 'location': e.location,
-            'date': e.event_date.strftime('%Y-%m-%d') if e.event_date else "N/A",
-            'startTime': e.start_time, 'endTime': e.end_time,
-            'seats': e.seats_available, 'hospitalName': e.hospital.hospital_name if e.hospital else "Unknown"
-        } for e in events]
-        return JsonResponse(data, safe=False)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-@csrf_exempt
-def delete_event_view(request, event_id):
-    EventTbl.objects.filter(event_id=event_id).delete()
-    return JsonResponse({'message': 'Event deleted'})
-
-
-@csrf_exempt
-def fulfill_appointment_view(request, appointment_id):
-    appt = AppointmentTbl.objects.filter(appointment_id=appointment_id).first()
-    if not appt:
-        return JsonResponse({'error': 'Not found'}, status=404)
-    appt.status = 'Fulfilled'
-    appt.save()
-    BloodStorageTbl.objects.create(
-        appointment=appt, blood_id=appt.donor.blood_id if appt.donor else None,
-        quantity=1, status='Available', expiry_date=datetime.date.today() + datetime.timedelta(days=42)
-    )
-    return JsonResponse({'message': 'Stock updated'})
-
-
-@csrf_exempt
-def create_blood_request_raw(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT recipient_id FROM recipient_tbl WHERE user_id = %s", [data.get('userId')])
-                recipient = cursor.fetchone()
-
-                if not recipient:
-                    return JsonResponse({'error': 'Recipient profile not found'}, status=404)
-
-                recipient_id = recipient[0]
-
-                sql = """
-                    INSERT INTO blood_request_tbl
-                    (recipient_id, hospital_id, blood_group, units, urgency, doctor_name, status, request_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """
-                params = [
-                    recipient_id,
-                    data.get('hospitalId', 9001),
-                    data.get('bloodGroup'),
-                    data.get('units'),
-                    data.get('urgency'),
-                    data.get('doctorName', 'Emergency Dept'),
-                    'Pending',
-                    timezone.now()
-                ]
-                cursor.execute(sql, params)
-
-            return JsonResponse({'message': 'Blood request created successfully'}, status=201)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
-
-
-@csrf_exempt
-def update_profile_raw(request):
-    if request.method == 'PUT':
-        try:
-            data = json.loads(request.body)
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "UPDATE user_registration_tbl SET full_name = %s, contact_no = %s WHERE email = %s",
-                    [data.get('fullName'), data.get('phone'), data.get('email')]
-                )
-                cursor.execute(
-                    "UPDATE donor_tbl SET address = %s, city = %s, weight = %s, gender = %s WHERE user_id = (SELECT user_id FROM user_registration_tbl WHERE email = %s)",
-                    [data.get('address'), data.get('city'), data.get('weight'), data.get('gender'), data.get('email')]
-                )
-            return JsonResponse({'message': 'Profile updated successfully'})
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
-
-
-@csrf_exempt
-def manage_stock_raw(request):
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            with connection.cursor() as cursor:
-                sql = """
-                    INSERT INTO blood_storage_tbl
-                    (hospital_id, blood_id, quantity, expiry_date, status)
-                    VALUES (%s, (SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s), %s, %s, %s)
-                """
-                params = [
-                    data.get('hospitalId'),
-                    data.get('bloodGroup'),
-                    data.get('units'),
-                    data.get('expiryDate'),
-                    'Available'
-                ]
-                cursor.execute(sql, params)
-            return JsonResponse({'message': 'Stock updated successfully'})
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
-    return JsonResponse({'error': 'Method not allowed'}, status=405)
-
-
-# -------------------------------------------------------------------------
-# FEATURE 1: CERTIFICATE DATA ENDPOINT
-# -------------------------------------------------------------------------
-def get_certificate_data(request, appointment_id):
-    """
-    Returns verified donation data so the frontend can generate a PDF certificate.
-    Only works for Fulfilled appointments.
-    """
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT 
-                    a.appointment_id,
-                    a.appointment_date,
-                    u.full_name        AS donor_name,
-                    u.email            AS donor_email,
-                    bt.blood_type,
-                    h.hospital_name,
-                    h.address          AS hospital_address,
-                    a.status
-                FROM appointment_tbl a
-                JOIN donor_tbl d      ON a.donor_id = d.donor_id
-                JOIN user_registration_tbl u ON d.user_id = u.user_id
-                LEFT JOIN blood_type_tbl bt ON d.blood_id = bt.blood_id
-                LEFT JOIN hospital_registration_tbl h ON a.hospital_id = h.hospital_id
-                WHERE a.appointment_id = %s AND a.status = 'Fulfilled'
-            """, [appointment_id])
-            row = cursor.fetchone()
-
-        if not row:
-            return JsonResponse({'error': 'Certificate not available for this record.'}, status=404)
-
-        cols = ['appointment_id', 'appointment_date', 'donor_name', 'donor_email',
-                'blood_type', 'hospital_name', 'hospital_address', 'status']
-        data = dict(zip(cols, row))
-        # Convert datetime to string
-        if data.get('appointment_date'):
-            try:
-                data['appointment_date'] = data['appointment_date'].strftime('%B %d, %Y')
-            except Exception:
-                data['appointment_date'] = str(data['appointment_date'])
-
-        return JsonResponse(data)
-
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-# -------------------------------------------------------------------------
-# FEATURE 3: DONOR INTEREST — "I CAN DONATE" ENDPOINT
-# -------------------------------------------------------------------------
-
-@csrf_exempt
-def express_donor_interest(request):
-    """
-    POST { email, requestId }
-    Creates a record in a donor_interest_log table (or appends to a notes field).
-    Falls back to a lightweight log in appointment_tbl via a raw INSERT.
+    Duplicate submissions for the same hospital are gracefully rejected.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
     try:
-        data = json.loads(request.body)
-        email = data.get('email')
+        data       = json.loads(request.body)
+        email      = data.get('email')
+        request_id = data.get('requestId')
+
+        if not email or not request_id:
+            return JsonResponse({'error': 'email and requestId are required.'}, status=400)
+
+        user = UserRegistrationTbl.objects.filter(email=email).first()
+        if not user:
+            return JsonResponse({'error': 'User not found.'}, status=404)
+
+        donor = DonorTbl.objects.filter(user=user).first()
+        if not donor:
+            return JsonResponse({'error': 'Donor profile not found.'}, status=404)
+
+        blood_request = (
+            BloodRequestTbl.objects
+            .select_related('hospital')
+            .filter(request_id=request_id)
+            .first()
+        )
+        if not blood_request:
+            return JsonResponse({'error': 'Blood request not found.'}, status=404)
+
+        hospital_id = blood_request.hospital_id if blood_request.hospital_id else None
+
+        # Prevent duplicate submissions for the same hospital
+        if hospital_id:
+            existing = AppointmentTbl.objects.filter(
+                donor=donor,
+                hospital_id=hospital_id,
+                status__in=['Pending', 'Confirmed']
+            ).first()
+            if existing:
+                return JsonResponse({
+                    'message': 'You already have a pending appointment with this hospital.',
+                    'alreadyExists': True
+                }, status=200)
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO appointment_tbl
+                (donor_id, hospital_id, appointment_date, status, health_questionnaire_data)
+                VALUES (%s, %s, %s, %s, %s)
+            """, [
+                donor.donor_id,
+                hospital_id,
+                timezone.now() + datetime.timedelta(days=1),
+                'Pending',
+                json.dumps({'interestedInRequestId': request_id})
+            ])
+
+        return JsonResponse({
+            'message': 'Interest registered! The hospital has been notified.',
+            'requestId': request_id
+        }, status=201)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def express_donor_interest(request):
+    """
+    POST { email, requestId }
+    Secondary interest endpoint that logs to donor_interest_log table.
+    Falls back gracefully if the table does not yet exist.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    try:
+        data       = json.loads(request.body)
+        email      = data.get('email')
         request_id = data.get('requestId')
 
         with connection.cursor() as cursor:
-            # Resolve donor_id from email
             cursor.execute("""
                 SELECT d.donor_id, u.full_name, bt.blood_type
                 FROM donor_tbl d
@@ -716,7 +518,6 @@ def express_donor_interest(request):
 
             donor_id, donor_name, blood_type = donor_row
 
-            # Prevent duplicate interests
             cursor.execute("""
                 SELECT 1 FROM donor_interest_log
                 WHERE donor_id = %s AND request_id = %s
@@ -725,17 +526,23 @@ def express_donor_interest(request):
             if cursor.fetchone():
                 return JsonResponse({'message': 'Already expressed interest.'}, status=200)
 
-            # Insert interest log
             cursor.execute("""
-                INSERT INTO donor_interest_log (donor_id, request_id, donor_name, blood_type, expressed_at)
+                INSERT INTO donor_interest_log
+                (donor_id, request_id, donor_name, blood_type, expressed_at)
                 VALUES (%s, %s, %s, %s, %s)
             """, [donor_id, request_id, donor_name, blood_type, timezone.now()])
 
-        return JsonResponse({'message': f'Thank you {donor_name}! The hospital has been notified.'}, status=201)
+        return JsonResponse(
+            {'message': f'Thank you {donor_name}! The hospital has been notified.'},
+            status=201
+        )
 
     except Exception as e:
-        # Graceful fallback — table may not exist yet; return success anyway
-        return JsonResponse({'message': 'Interest registered (local fallback).', 'detail': str(e)}, status=200)
+        # Graceful fallback — table may not exist yet
+        return JsonResponse(
+            {'message': 'Interest registered (local fallback).', 'detail': str(e)},
+            status=200
+        )
 
 
 # -------------------------------------------------------------------------
@@ -745,7 +552,8 @@ def express_donor_interest(request):
 def get_donor_notifications(request):
     """
     GET ?email=...
-    Returns a list of notification objects derived from appointment status changes.
+    Returns notification objects derived from appointment status changes
+    and urgent blood requests matching the donor's blood type.
     """
     email = request.GET.get('email')
     if not email:
@@ -754,7 +562,7 @@ def get_donor_notifications(request):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT 
+                SELECT
                     a.appointment_id,
                     a.appointment_date,
                     a.status,
@@ -776,42 +584,41 @@ def get_donor_notifications(request):
 
             if status == 'Confirmed':
                 notifications.append({
-                    'id': f'appt-{appt_id}-confirmed',
-                    'type': 'success',
-                    'title': 'Appointment Confirmed ✅',
-                    'message': f'{hospital} confirmed your appointment on {date_str}.',
+                    'id':            f'appt-{appt_id}-confirmed',
+                    'type':          'success',
+                    'title':         'Appointment Confirmed ✅',
+                    'message':       f'{hospital} confirmed your appointment on {date_str}.',
                     'appointmentId': appt_id,
-                    'read': False
+                    'read':          False
                 })
             elif status == 'Rejected':
                 notifications.append({
-                    'id': f'appt-{appt_id}-rejected',
-                    'type': 'warning',
-                    'title': 'Appointment Declined',
-                    'message': f'Your request for {date_str} at {hospital} was declined. Please reschedule.',
+                    'id':            f'appt-{appt_id}-rejected',
+                    'type':          'warning',
+                    'title':         'Appointment Declined',
+                    'message':       f'Your request for {date_str} at {hospital} was declined. Please reschedule.',
                     'appointmentId': appt_id,
-                    'read': False
+                    'read':          False
                 })
             elif status == 'Fulfilled':
                 notifications.append({
-                    'id': f'appt-{appt_id}-fulfilled',
-                    'type': 'info',
-                    'title': 'Donation Recorded 🩸',
-                    'message': f'Your donation on {date_str} at {hospital} has been logged. Thank you!',
+                    'id':            f'appt-{appt_id}-fulfilled',
+                    'type':          'info',
+                    'title':         'Donation Recorded 🩸',
+                    'message':       f'Your donation on {date_str} at {hospital} has been logged. Thank you!',
                     'appointmentId': appt_id,
-                    'read': False
+                    'read':          False
                 })
             elif status == 'Screening Failed':
                 notifications.append({
-                    'id': f'appt-{appt_id}-screening',
-                    'type': 'warning',
-                    'title': 'Screening Unsuccessful ⚠️',
-                    'message': f'You were marked ineligible during screening on {date_str}. Please check with {hospital}.',
+                    'id':            f'appt-{appt_id}-screening',
+                    'type':          'warning',
+                    'title':         'Screening Unsuccessful ⚠️',
+                    'message':       f'You were marked ineligible during screening on {date_str}. Please check with {hospital}.',
                     'appointmentId': appt_id,
-                    'read': False
+                    'read':          False
                 })
 
-        # Also check for urgent blood requests matching donor's blood type
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT br.request_id, br.blood_group, br.urgency, r.full_name
@@ -821,7 +628,8 @@ def get_donor_notifications(request):
                     SELECT blood_id FROM blood_type_tbl WHERE blood_type = br.blood_group LIMIT 1
                 )
                 JOIN user_registration_tbl u ON d.user_id = u.user_id
-                WHERE u.email = %s AND br.status = 'Pending' AND br.urgency IN ('Critical', 'High')
+                WHERE u.email = %s AND br.status = 'Pending'
+                  AND br.urgency IN ('Critical', 'High')
                 LIMIT 3
             """, [email])
             urgent_rows = cursor.fetchall()
@@ -829,12 +637,12 @@ def get_donor_notifications(request):
         for row in urgent_rows:
             req_id, blood_group, urgency, patient_name = row
             notifications.insert(0, {
-                'id': f'req-{req_id}-alert',
-                'type': 'urgent',
-                'title': f'🚨 Urgent {blood_group} Needed!',
-                'message': f'{patient_name} urgently needs {blood_group} blood. Can you help?',
+                'id':        f'req-{req_id}-alert',
+                'type':      'urgent',
+                'title':     f'🚨 Urgent {blood_group} Needed!',
+                'message':   f'{patient_name} urgently needs {blood_group} blood. Can you help?',
                 'requestId': req_id,
-                'read': False
+                'read':      False
             })
 
         return JsonResponse(notifications[:10], safe=False)
@@ -850,7 +658,8 @@ def get_donor_notifications(request):
 def get_donor_eligibility(request):
     """
     GET ?email=...
-    Returns last fulfilled donation date and computes the next eligible donation date.
+    Returns last fulfilled donation date and computes the 56-day
+    eligibility window for whole blood donors.
     """
     email = request.GET.get('email')
     if not email:
@@ -871,26 +680,307 @@ def get_donor_eligibility(request):
 
         if not last_donation:
             return JsonResponse({
-                'eligible': True,
-                'daysRemaining': 0,
-                'lastDonation': None,
+                'eligible':        True,
+                'daysRemaining':   0,
+                'lastDonation':    None,
                 'nextEligibleDate': None
             })
 
         next_eligible = last_donation + datetime.timedelta(days=56)
-        # handle timezone-aware datetimes
         try:
-            today = datetime.datetime.now(tz=last_donation.tzinfo) if getattr(last_donation, 'tzinfo', None) else datetime.datetime.now()
+            today = (
+                datetime.datetime.now(tz=last_donation.tzinfo)
+                if getattr(last_donation, 'tzinfo', None)
+                else datetime.datetime.now()
+            )
         except Exception:
             today = datetime.datetime.now()
+
         days_remaining = max(0, (next_eligible - today).days)
 
         return JsonResponse({
-            'eligible': days_remaining == 0,
-            'daysRemaining': days_remaining,
-            'lastDonation': last_donation.strftime('%Y-%m-%d'),
+            'eligible':         days_remaining == 0,
+            'daysRemaining':    days_remaining,
+            'lastDonation':     last_donation.strftime('%Y-%m-%d'),
             'nextEligibleDate': next_eligible.strftime('%Y-%m-%d')
         })
 
     except Exception as e:
         return JsonResponse({'eligible': True, 'daysRemaining': 0, 'error': str(e)})
+
+
+# -------------------------------------------------------------------------
+# FEATURE 1: CERTIFICATE DATA ENDPOINT
+# -------------------------------------------------------------------------
+
+def get_certificate_data(request, appointment_id):
+    """
+    Returns verified donation data so the frontend can generate a PDF certificate.
+    Only works for Fulfilled appointments.
+    """
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    a.appointment_id,
+                    a.appointment_date,
+                    u.full_name        AS donor_name,
+                    u.email            AS donor_email,
+                    bt.blood_type,
+                    h.hospital_name,
+                    h.address          AS hospital_address,
+                    a.status
+                FROM appointment_tbl a
+                JOIN donor_tbl d      ON a.donor_id = d.donor_id
+                JOIN user_registration_tbl u ON d.user_id = u.user_id
+                LEFT JOIN blood_type_tbl bt ON d.blood_id = bt.blood_id
+                LEFT JOIN hospital_registration_tbl h ON a.hospital_id = h.hospital_id
+                WHERE a.appointment_id = %s AND a.status = 'Fulfilled'
+            """, [appointment_id])
+            row = cursor.fetchone()
+
+        if not row:
+            return JsonResponse({'error': 'Certificate not available for this record.'}, status=404)
+
+        cols = [
+            'appointment_id', 'appointment_date', 'donor_name', 'donor_email',
+            'blood_type', 'hospital_name', 'hospital_address', 'status'
+        ]
+        data = dict(zip(cols, row))
+
+        if data.get('appointment_date'):
+            try:
+                data['appointment_date'] = data['appointment_date'].strftime('%B %d, %Y')
+            except Exception:
+                data['appointment_date'] = str(data['appointment_date'])
+
+        return JsonResponse(data)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# -------------------------------------------------------------------------
+# ADMIN DASHBOARD & REPORTS
+# -------------------------------------------------------------------------
+
+def admin_dashboard_stats(request):
+    try:
+        stats = {
+            'donors':           UserRegistrationTbl.objects.filter(user_role='Donor').count(),
+            'hospitals':        UserRegistrationTbl.objects.filter(user_role='Hospital').count(),
+            'recipients':       UserRegistrationTbl.objects.filter(user_role='Recipient').count(),
+            'total_units':      BloodStorageTbl.objects.aggregate(total=Sum('quantity'))['total'] or 0,
+            'pending_requests': BloodRequestTbl.objects.filter(status='Pending').count(),
+        }
+
+        inventory = []
+        for bt in BloodTypeTbl.objects.all():
+            count = (
+                BloodStorageTbl.objects
+                .filter(blood_id=bt.blood_id)
+                .aggregate(total=Sum('quantity'))['total'] or 0
+            )
+            inventory.append({
+                'type':     bt.blood_type,
+                'count':    count,
+                'capacity': 100,
+                'status':   'Critical' if count == 0 else ('Low' if count < 10 else 'Stable'),
+            })
+
+        activity = []
+        for i in range(3):
+            d   = datetime.date.today() - datetime.timedelta(days=i * 30)
+            don = AppointmentTbl.objects.filter(
+                status='Fulfilled', appointment_date__month=d.month
+            ).count()
+            req = BloodRequestTbl.objects.filter(request_date__month=d.month).count()
+            activity.append({
+                'month':     d.strftime('%B'),
+                'donations': don,
+                'requests':  req,
+                'outcome':   f"{don - req:+}",
+            })
+
+        return JsonResponse({
+            'stats':            stats,
+            'inventory':        inventory,
+            'monthly_activity': activity,
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def user_list(request):
+    users = UserRegistrationTbl.objects.values(
+        'user_id', 'full_name', 'email', 'user_role', 'status'
+    )
+    return JsonResponse(list(users), safe=False)
+
+
+@csrf_exempt
+def delete_user(request, user_id):
+    """
+    Ban a user account.
+
+    SECURITY FIX: Only the explicit DELETE method is accepted.
+    Any other verb (GET, POST, etc.) returns 405 Method Not Allowed,
+    preventing accidental bans when a URL is opened in a browser.
+
+    React call (AdminDashboard.jsx):
+        fetch(`/api/admin/users/${id}/`, { method: 'DELETE' })
+    """
+    if request.method == 'DELETE':
+        UserRegistrationTbl.objects.filter(user_id=user_id).update(status='Banned')
+        return JsonResponse({'message': 'User disabled successfully'})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+# -------------------------------------------------------------------------
+# EVENTS & HOSPITAL ACTIONS
+# -------------------------------------------------------------------------
+
+def event_list(request):
+    try:
+        events = EventTbl.objects.select_related('hospital').all().order_by('-event_date')
+        data = [
+            {
+                'id':           e.event_id,
+                'title':        e.event_title,
+                'location':     e.location,
+                'date':         e.event_date.strftime('%Y-%m-%d') if e.event_date else "N/A",
+                'startTime':    e.start_time,
+                'endTime':      e.end_time,
+                'seats':        e.seats_available,
+                'hospitalName': e.hospital.hospital_name if e.hospital else "Unknown",
+            }
+            for e in events
+        ]
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def delete_event_view(request, event_id):
+    """
+    Cancel / delete a blood drive event.
+
+    SECURITY FIX: Only the explicit DELETE method is accepted.
+    The admin holds the exclusive authority to remove events —
+    enforcing DELETE prevents any accidental GET-triggered deletions.
+
+    React call (AdminDashboard.jsx):
+        fetch(`/api/admin/events/${id}/`, { method: 'DELETE' })
+    """
+    if request.method == 'DELETE':
+        EventTbl.objects.filter(event_id=event_id).delete()
+        return JsonResponse({'message': 'Event successfully disabled'})
+
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def fulfill_appointment_view(request, appointment_id):
+    appt = AppointmentTbl.objects.filter(appointment_id=appointment_id).first()
+    if not appt:
+        return JsonResponse({'error': 'Not found'}, status=404)
+    appt.status = 'Fulfilled'
+    appt.save()
+    BloodStorageTbl.objects.create(
+        appointment=appt,
+        blood_id=appt.donor.blood_id if appt.donor else None,
+        quantity=1,
+        status='Available',
+        expiry_date=datetime.date.today() + datetime.timedelta(days=42)
+    )
+    return JsonResponse({'message': 'Stock updated'})
+
+
+@csrf_exempt
+def create_blood_request_raw(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT recipient_id FROM recipient_tbl WHERE user_id = %s",
+                    [data.get('userId')]
+                )
+                recipient = cursor.fetchone()
+
+                if not recipient:
+                    return JsonResponse({'error': 'Recipient profile not found'}, status=404)
+
+                cursor.execute("""
+                    INSERT INTO blood_request_tbl
+                    (recipient_id, hospital_id, blood_group, units, urgency,
+                     doctor_name, status, request_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, [
+                    recipient[0],
+                    data.get('hospitalId', 9001),
+                    data.get('bloodGroup'),
+                    data.get('units'),
+                    data.get('urgency'),
+                    data.get('doctorName', 'Emergency Dept'),
+                    'Pending',
+                    timezone.now()
+                ])
+
+            return JsonResponse({'message': 'Blood request created successfully'}, status=201)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def update_profile_raw(request):
+    if request.method == 'PUT':
+        try:
+            data = json.loads(request.body)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE user_registration_tbl SET full_name = %s, contact_no = %s WHERE email = %s",
+                    [data.get('fullName'), data.get('phone'), data.get('email')]
+                )
+                cursor.execute(
+                    "UPDATE donor_tbl SET address = %s, city = %s, weight = %s, gender = %s "
+                    "WHERE user_id = (SELECT user_id FROM user_registration_tbl WHERE email = %s)",
+                    [
+                        data.get('address'), data.get('city'),
+                        data.get('weight'), data.get('gender'), data.get('email')
+                    ]
+                )
+            return JsonResponse({'message': 'Profile updated successfully'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def manage_stock_raw(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO blood_storage_tbl
+                    (hospital_id, blood_id, quantity, expiry_date, status)
+                    VALUES (
+                        %s,
+                        (SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s),
+                        %s, %s, %s
+                    )
+                """, [
+                    data.get('hospitalId'),
+                    data.get('bloodGroup'),
+                    data.get('units'),
+                    data.get('expiryDate'),
+                    'Available'
+                ])
+            return JsonResponse({'message': 'Stock updated successfully'})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
