@@ -37,16 +37,7 @@ const HospitalDashboard = () => {
         .reduce((acc, curr) => acc + (curr.quantity || 0), 0);
 
       // Convert ml to Units (450ml = 1 Unit)
-      // If logs are empty, use a default mock value for demo purposes
       let units = Math.floor((incoming - outgoing) / 450);
-      
-      // Default Mock Data injection if system is empty (for first-time view)
-      if (logs.length === 0) {
-        if (type === 'O+') units = 15;
-        if (type === 'A+') units = 12;
-        if (type === 'AB-') units = 1;
-        if (type === 'B-') units = 0;
-      }
 
       // Determine Status
       let status = 'Good';
@@ -61,19 +52,12 @@ const HospitalDashboard = () => {
 
     // 2. FETCH REQUESTS
     const storedRequests = JSON.parse(localStorage.getItem('live_blood_requests') || '[]');
-    // Add some dummy defaults if empty
-    const defaultRequests = [
-      { id: 101, patientName: "Sarah Jenkins", bloodGroup: "A-", units: 2, doctor: "Dr. Smith", urgency: "High", status: "Pending", type: "Internal Admission" },
-      { id: 102, patientName: "Mike Ross", bloodGroup: "O+", units: 1, doctor: "Dr. Zane", urgency: "Routine", status: "Pending", type: "Internal Admission" },
-    ];
-    
-    const combinedRequests = [...storedRequests, ...defaultRequests];
-    setRequests(combinedRequests);
+    setRequests(storedRequests);
 
     // 3. UPDATE STATS
     const totalUnits = calculatedInventory.reduce((acc, curr) => acc + curr.units, 0);
     const critical = calculatedInventory.filter(i => i.status === 'Critical').length;
-    const pending = combinedRequests.filter(r => r.status === 'Pending').length;
+    const pending = storedRequests.filter(r => r.status === 'Pending').length;
 
     setStats({ totalUnits, criticalAlerts: critical, pendingCount: pending });
 

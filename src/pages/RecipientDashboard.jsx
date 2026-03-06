@@ -35,39 +35,9 @@ const stepIndex = (status) => {
 
 const fmt = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
 
-// ── Mock fallback data ────────────────────────────────────────────────────────
-
-const MOCK_REQUESTS = [
-  {
-    requestId: 101, bloodGroup: 'B+', units: 2, urgency: 'High',
-    status: 'Approved', requestDate: '2025-01-24',
-    hospitalName: 'City General Hospital', hospitalCity: 'Vadodara',
-    hospitalId: 9001, donorInterestCount: 3, isGlobal: false,
-  },
-  {
-    requestId: 98, bloodGroup: 'B+', units: 1, urgency: 'Routine',
-    status: 'Fulfilled', requestDate: '2024-11-10',
-    hospitalName: 'Sterling Hospital', hospitalCity: 'Vadodara',
-    hospitalId: 9002, donorInterestCount: 1, isGlobal: false,
-  },
-];
-
-const MOCK_BILLS = [
-  {
-    billNo: 'B-2024-101', quantity: 2, rate: 500, amount: 1000,
-    bloodType: 'B+', bloodReceivedBy: 'Anjali Gupta',
-    appointmentDate: '2025-01-24', paymentStatus: 'Unpaid',
-    paymentId: null, paymentDate: null,
-  },
-  {
-    billNo: 'B-2024-98', quantity: 1, rate: 500, amount: 590,
-    bloodType: 'B+', bloodReceivedBy: 'Anjali Gupta',
-    appointmentDate: '2024-11-10', paymentStatus: 'Paid',
-    paymentId: 'PAY-20241110', paymentDate: '2024-11-10',
-  },
-];
-
 // ─────────────────────────────────────────────────────────────────────────────
+
+
 
 export default function RecipientDashboard() {
 
@@ -104,17 +74,17 @@ export default function RecipientDashboard() {
   // ── Fetch live requests (polls every 30 s) ─────────────────────────────────
 
   const fetchRequests = useCallback(async () => {
-    if (!user.email) { setRequests(MOCK_REQUESTS); setLoading(false); return; }
+    if (!user.email) { setRequests([]); setLoading(false); return; }
     try {
       const res  = await fetch(API.requests(user.email));
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setRequests(data.sort((a, b) => (a.status === 'Fulfilled' ? 1 : -1)));
       } else {
-        setRequests(MOCK_REQUESTS);
+        setRequests([]);
       }
     } catch {
-      setRequests(MOCK_REQUESTS);
+      setRequests([]);
     } finally {
       setLoading(false);
     }
@@ -134,13 +104,13 @@ export default function RecipientDashboard() {
     if (activeTab !== 'bills') return;
     setBillsLoading(true);
     const load = async () => {
-      if (!user.email) { setBills(MOCK_BILLS); setBillsLoading(false); return; }
+      if (!user.email) { setBills([]); setBillsLoading(false); return; }
       try {
         const res  = await fetch(API.bills(user.email));
         const data = await res.json();
-        setBills(Array.isArray(data) && data.length > 0 ? data : MOCK_BILLS);
+        setBills(Array.isArray(data) ? data : []);
       } catch {
-        setBills(MOCK_BILLS);
+        setBills([]);
       } finally {
         setBillsLoading(false);
       }
@@ -346,7 +316,7 @@ export default function RecipientDashboard() {
                 {bills.length === 0 && (
                   <div style={styles.emptyCard}>
                     <p style={{ fontSize: 40 }}>🧾</p>
-                    <p style={{ color: '#6B7280', fontWeight: 600, marginTop: 8 }}>No bills found.</p>
+                    <p style={{ color: '#6B7280', fontWeight: 600, marginTop: 8 }}>No billing records found in your account.</p>
                   </div>
                 )}
               </>

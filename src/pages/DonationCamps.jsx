@@ -170,7 +170,12 @@ const DonationCamps = () => {
         </div>
 
         <div className="grid gap-6">
-          {displayedCamps.map((camp) => {
+          {displayedCamps.length === 0 ? (
+            <div className="bg-white p-12 rounded-xl border border-dashed text-center text-gray-500">
+              <p className="text-lg font-medium">No donation camps scheduled.</p>
+              <p className="text-sm">Please check back later for upcoming blood drives in your area.</p>
+            </div>
+          ) : displayedCamps.map((camp) => {
             const isRegistered = registeredCampIds.includes(camp.id);
             const isFull = camp.seats <= 0;
 
@@ -226,7 +231,7 @@ const DonationCamps = () => {
                 </div>
               </div>
             );
-          })}
+          }))}
         </div>
       </div>
     </div>

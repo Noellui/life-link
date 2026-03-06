@@ -33,22 +33,27 @@ const AdminDashboard = ({ onLogout }) => {
       const statsResponse = await fetch('http://127.0.0.1:8000/api/admin/stats/');
       if (statsResponse.ok) {
         const data = await statsResponse.json();
-        setInventoryStats(data.inventory || []);
+        setInventoryStats(Array.isArray(data.inventory) ? data.inventory : []);
         setDashboardStats(data.stats || { donors: 0, recipients: 0, hospitals: 0, total_units: 0, pending_requests: 0 });
-        if (data.monthly_activity) setMonthlyActivity(data.monthly_activity);
+        setMonthlyActivity(Array.isArray(data.monthly_activity) ? data.monthly_activity : []);
+      } else {
+        setInventoryStats([]);
+        setMonthlyActivity([]);
       }
 
       const usersResponse = await fetch('http://127.0.0.1:8000/api/admin/users/');
       if (usersResponse.ok) {
         const usersData = await usersResponse.json();
-        setUsers(usersData.map(u => ({
+        setUsers(Array.isArray(usersData) ? usersData.map(u => ({
           id: u.user_id,
           name: u.full_name,
           role: u.user_role,
           email: u.email,
           city: "Vadodara",
           status: u.status || "Active"
-        })));
+        })) : []);
+      } else {
+        setUsers([]);
       }
 
       const eventsResponse = await fetch('http://127.0.0.1:8000/api/admin/events/');
@@ -59,6 +64,10 @@ const AdminDashboard = ({ onLogout }) => {
       }
     } catch (error) {
       console.error("Failed to fetch dashboard data", error);
+      setInventoryStats([]);
+      setUsers([]);
+      setEvents([]);
+      setMonthlyActivity([]);
     } finally {
       setLoading(false);
     }
@@ -170,22 +179,28 @@ const AdminDashboard = ({ onLogout }) => {
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">⚠️ Critical System Alerts</h3>
-        <ul className="space-y-3">
-          {inventoryStats.some(i => i.status === 'Critical') ? (
-             <li className="flex items-start bg-red-50 p-4 rounded-lg border border-red-100">
-               <span className="text-red-500 mr-3 text-lg">●</span>
-               <span className="text-sm text-red-800">
-                 <strong>Critical Stock Alert:</strong> Empty groups: 
-                 {inventoryStats.filter(i => i.status === 'Critical').map(i => ` ${i.type}`)}.
-               </span>
-             </li>
-          ) : (
-            <li className="flex items-start bg-green-50 p-4 rounded-lg border border-green-100">
-              <span className="text-green-500 mr-3 text-lg">●</span>
-              <span className="text-sm text-green-800"><strong>System Healthy:</strong> Blood stock levels are stable.</span>
-            </li>
-          )}
-        </ul>
+        {inventoryStats.length === 0 ? (
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+            <strong>Notice:</strong> No blood inventory data is currently available in the system.
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {inventoryStats.some(i => i.status === 'Critical') ? (
+               <li className="flex items-start bg-red-50 p-4 rounded-lg border border-red-100">
+                 <span className="text-red-500 mr-3 text-lg">●</span>
+                 <span className="text-sm text-red-800">
+                   <strong>Critical Stock Alert:</strong> Empty groups: 
+                   {inventoryStats.filter(i => i.status === 'Critical').map(i => ` ${i.type}`)}.
+                 </span>
+               </li>
+            ) : (
+              <li className="flex items-start bg-green-50 p-4 rounded-lg border border-green-100">
+                <span className="text-green-500 mr-3 text-lg">●</span>
+                <span className="text-sm text-green-800"><strong>System Healthy:</strong> Blood stock levels are stable.</span>
+              </li>
+            )}
+          </ul>
+        )}
       </div>
     </div>
   );
