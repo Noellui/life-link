@@ -10,22 +10,6 @@ const API = {
 
 const fmt = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
 
-// ── Mock fallback data ────────────────────────────────────────────────────────
-const MOCK_BILLS = [
-  {
-    billNo: 'B-2024-101', quantity: 2, rate: 500, amount: 1000,
-    bloodType: 'B+', bloodReceivedBy: 'Anjali Gupta',
-    appointmentDate: '2026-03-05', paymentStatus: 'Unpaid',
-    paymentId: null, paymentDate: null,
-  },
-  {
-    billNo: 'B-2024-98', quantity: 1, rate: 500, amount: 590,
-    bloodType: 'B+', bloodReceivedBy: 'Anjali Gupta',
-    appointmentDate: '2026-02-15', paymentStatus: 'Paid',
-    paymentId: 'PAY-20260215', paymentDate: '2026-02-15',
-  },
-];
-
 export default function MyBills() {
   const navigate = useNavigate();
 
@@ -60,26 +44,29 @@ export default function MyBills() {
 
   // ── Fetch Bills ────────────────────────────────────────────────────────────
   useEffect(() => {
-  if (!user.email) return;
+    if (!user.email) return;
 
-  // 1. Define the async function INSIDE the useEffect
-  const fetchBills = async () => {
-    try {
-      const res = await fetch(API.bills(user.email));
-      const data = await res.json();
-      // ONLY use the data from the database, even if it is empty
-      setBills(Array.isArray(data) ? data : []);
-    } catch (error) {
-      // If the server crashes, show an empty list, not fake data
-      console.error("Failed to fetch bills:", error);
-      setBills([]);
-    }
-  };
+    // 1. Define the async function INSIDE the useEffect
+    const fetchBills = async () => {
+      try {
+        const res = await fetch(API.bills(user.email));
+        const data = await res.json();
+        // ONLY use the data from the database, even if it is empty
+        setBills(Array.isArray(data) ? data : []);
+      } catch (error) {
+        // If the server crashes, show an empty list
+        console.error("Failed to fetch bills:", error);
+        setBills([]);
+      } finally {
+        // MUST set loading to false so the empty state can render
+        setBillsLoading(false);
+      }
+    };
 
-  // 2. Call the function
-  fetchBills();
+    // 2. Call the function
+    fetchBills();
 
-}, [user.email]);
+  }, [user.email]);
 
   // ── Payment Handlers ───────────────────────────────────────────────────────
   const openPayModal = (bill) => {
@@ -197,8 +184,13 @@ export default function MyBills() {
 
             {bills.length === 0 && (
               <div style={styles.emptyCard}>
-                <p style={{ fontSize: 40 }}>🧾</p>
-                <p style={{ color: '#6B7280', fontWeight: 600, marginTop: 8 }}>No bills found.</p>
+                <p style={{ fontSize: 40, margin: '0 0 12px 0' }}>🧾</p>
+                <p style={{ color: '#374151', fontSize: 18, fontWeight: 700, margin: 0 }}>
+                  No billing records found.
+                </p>
+                <p style={{ color: '#6B7280', fontSize: 14, marginTop: 8 }}>
+                  When you have fulfilled transfusion requests, your processing bills will appear here.
+                </p>
               </div>
             )}
           </>

@@ -170,63 +170,71 @@ const DonationCamps = () => {
         </div>
 
         <div className="grid gap-6">
-          {displayedCamps.map((camp) => {
-            const isRegistered = registeredCampIds.includes(camp.id);
-            const isFull = camp.seats <= 0;
+          {/* ADDED: Empty state handling for Donation Camps */}
+          {displayedCamps.length === 0 ? (
+            <div className="bg-white p-12 rounded-xl border border-dashed text-center text-gray-500">
+              <p className="text-lg font-medium">No donation camps scheduled.</p>
+              <p className="text-sm">Please check back later for upcoming blood drives in your area.</p>
+            </div>
+          ) : (
+            displayedCamps.map((camp) => {
+              const isRegistered = registeredCampIds.includes(camp.id);
+              const isFull = camp.seats <= 0;
 
-            return (
-              <div key={camp.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row justify-between hover:shadow-md transition duration-200 z-0">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <h3 className="text-xl font-bold text-gray-900">{camp.title}</h3>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                      isFull ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-                    }`}>
-                      {isFull ? 'Full' : 'Open'}
-                    </span>
+              return (
+                <div key={camp.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row justify-between hover:shadow-md transition duration-200 z-0">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-xl font-bold text-gray-900">{camp.title}</h3>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        isFull ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                      }`}>
+                        {isFull ? 'Full' : 'Open'}
+                      </span>
+                    </div>
+                    <p className="text-red-600 font-medium text-sm mb-4">Organized by {camp.hospitalName}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-2"><span>📅</span> {camp.date}</div>
+                      <div className="flex items-center gap-2"><span>⏰</span> {camp.startTime} - {camp.endTime}</div>
+                      <div className="flex items-center gap-2"><span>📍</span> {camp.location}</div>
+                    </div>
                   </div>
-                  <p className="text-red-600 font-medium text-sm mb-4">Organized by {camp.hospitalName}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 text-sm text-gray-600">
-                    <div className="flex items-center gap-2"><span>📅</span> {camp.date}</div>
-                    <div className="flex items-center gap-2"><span>⏰</span> {camp.startTime} - {camp.endTime}</div>
-                    <div className="flex items-center gap-2"><span>📍</span> {camp.location}</div>
-                  </div>
-                </div>
 
-                <div className="mt-4 md:mt-0 md:ml-6 flex flex-col items-center justify-center gap-3 min-w-[140px]">
-                  <div className="text-center">
-                    <span className={`block text-2xl font-bold ${isFull ? 'text-red-600' : 'text-gray-800'}`}>
-                      {camp.seats}
-                    </span>
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">Slots Left</span>
-                  </div>
-                  {isRegistered ? (
-                    <button disabled className="w-full bg-green-100 text-green-700 border border-green-200 px-4 py-2 rounded-lg font-bold cursor-default">
-                      ✓ Registered
-                    </button>
-                  ) : (
+                  <div className="mt-4 md:mt-0 md:ml-6 flex flex-col items-center justify-center gap-3 min-w-[140px]">
+                    <div className="text-center">
+                      <span className={`block text-2xl font-bold ${isFull ? 'text-red-600' : 'text-gray-800'}`}>
+                        {camp.seats}
+                      </span>
+                      <span className="text-xs text-gray-500 uppercase tracking-wide">Slots Left</span>
+                    </div>
+                    {isRegistered ? (
+                      <button disabled className="w-full bg-green-100 text-green-700 border border-green-200 px-4 py-2 rounded-lg font-bold cursor-default">
+                        ✓ Registered
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleRegister(camp.id)}
+                        disabled={isFull}
+                        className={`w-full px-4 py-2 rounded-lg font-medium transition shadow-sm mb-2 ${
+                          isFull 
+                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                          : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
+                      >
+                        {isFull ? 'Full' : 'Register Now'}
+                      </button>
+                    )}
                     <button 
-                      onClick={() => handleRegister(camp.id)}
-                      disabled={isFull}
-                      className={`w-full px-4 py-2 rounded-lg font-medium transition shadow-sm mb-2 ${
-                        isFull 
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
-                        : 'bg-red-600 text-white hover:bg-red-700'
-                      }`}
+                      onClick={() => handleDirections(camp.lat, camp.lng)}
+                      className="w-full text-gray-600 hover:text-red-600 text-sm font-medium border border-gray-200 rounded-lg py-2 hover:bg-gray-50 flex items-center justify-center gap-2"
                     >
-                      {isFull ? 'Full' : 'Register Now'}
+                      <span>🗺️</span> Directions
                     </button>
-                  )}
-                  <button 
-                    onClick={() => handleDirections(camp.lat, camp.lng)}
-                    className="w-full text-gray-600 hover:text-red-600 text-sm font-medium border border-gray-200 rounded-lg py-2 hover:bg-gray-50 flex items-center justify-center gap-2"
-                  >
-                    <span>🗺️</span> Directions
-                  </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
     </div>

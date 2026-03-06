@@ -170,22 +170,30 @@ const AdminDashboard = ({ onLogout }) => {
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">⚠️ Critical System Alerts</h3>
-        <ul className="space-y-3">
-          {inventoryStats.some(i => i.status === 'Critical') ? (
-             <li className="flex items-start bg-red-50 p-4 rounded-lg border border-red-100">
-               <span className="text-red-500 mr-3 text-lg">●</span>
-               <span className="text-sm text-red-800">
-                 <strong>Critical Stock Alert:</strong> Empty groups: 
-                 {inventoryStats.filter(i => i.status === 'Critical').map(i => ` ${i.type}`)}.
-               </span>
-             </li>
-          ) : (
-            <li className="flex items-start bg-green-50 p-4 rounded-lg border border-green-100">
-              <span className="text-green-500 mr-3 text-lg">●</span>
-              <span className="text-sm text-green-800"><strong>System Healthy:</strong> Blood stock levels are stable.</span>
-            </li>
-          )}
-        </ul>
+        
+        {/* ADDED: Empty state handling for inventory */}
+        {inventoryStats.length === 0 ? (
+          <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+            <strong>Notice:</strong> No blood inventory data is currently available in the system.
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {inventoryStats.some(i => i.status === 'Critical') ? (
+               <li className="flex items-start bg-red-50 p-4 rounded-lg border border-red-100">
+                 <span className="text-red-500 mr-3 text-lg">●</span>
+                 <span className="text-sm text-red-800">
+                   <strong>Critical Stock Alert:</strong> Empty groups: 
+                   {inventoryStats.filter(i => i.status === 'Critical').map(i => ` ${i.type}`)}.
+                 </span>
+               </li>
+            ) : (
+              <li className="flex items-start bg-green-50 p-4 rounded-lg border border-green-100">
+                <span className="text-green-500 mr-3 text-lg">●</span>
+                <span className="text-sm text-green-800"><strong>System Healthy:</strong> Blood stock levels are stable.</span>
+              </li>
+            )}
+          </ul>
+        )}
       </div>
     </div>
   );
@@ -319,7 +327,6 @@ const AdminDashboard = ({ onLogout }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar with Flexbox Column Layout */}
       <aside className="w-64 bg-gray-900 text-white min-h-screen fixed z-10 flex flex-col justify-between">
         <div>
           <div className="p-6 border-b border-gray-800">
@@ -343,7 +350,6 @@ const AdminDashboard = ({ onLogout }) => {
           </nav>
         </div>
 
-        {/* Log Out button pinned to the absolute bottom */}
         <div className="p-4 border-t border-gray-800">
           <button 
             onClick={handleLogoutClick} 

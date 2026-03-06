@@ -15,36 +15,40 @@ const Navbar = ({ user, onLogout }) => {
         : 'text-gray-600 hover:text-red-600'
     }`;
 
-  // --- FETCH UNPAID BILLS FOR RECIPIENT ---
+  // --- FETCH UNPAID BILLS FOR RECIPIENT FROM DATABASE ---
   useEffect(() => {
-    const calculateUnpaid = () => {
+    const fetchUnpaidBills = async () => {
       if (user && user.role === 'Recipient') {
-        const storedRequests = JSON.parse(localStorage.getItem('live_blood_requests') || '[]');
-        const userNameToMatch = user.name || "Guest";
+        // Fallback to local storage if user.email isn't directly on the user prop
+        const userEmail = user.email || JSON.parse(localStorage.getItem('user_data') || localStorage.getItem('lifeLinkUser') || '{}').email;
         
-        const userReqs = storedRequests.filter(req => 
-          req.patientName && req.patientName.toLowerCase() === userNameToMatch.toLowerCase()
-        );
+        if (!userEmail) return;
 
-        // Count requests that are Approved but not yet Paid
-        let unpaid = userReqs.filter(req => req.status === 'Approved' && req.paymentStatus !== 'Paid').length;
-
-        // Fallback for demo mock data (matches your dashboard logic)
-        if (userReqs.length === 0) {
-          unpaid = 1; 
+        try {
+          const res = await fetch(`http://127.0.0.1:8000/api/recipient/bills/?email=${encodeURIComponent(userEmail)}`);
+          if (res.ok) {
+            const data = await res.json();
+            // Count purely from database response, no mock fallbacks
+            if (Array.isArray(data)) {
+              const unpaid = data.filter(bill => bill.paymentStatus === 'Unpaid').length;
+              setUnpaidCount(unpaid);
+            } else {
+              setUnpaidCount(0);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch unpaid bills count:", error);
+          setUnpaidCount(0);
         }
-
-        setUnpaidCount(unpaid);
       }
     };
 
-    calculateUnpaid();
+    fetchUnpaidBills();
 
     // Listen for storage changes so the badge updates immediately when a bill is paid
-    window.addEventListener('storage', calculateUnpaid);
-    return () => window.removeEventListener('storage', calculateUnpaid);
+    window.addEventListener('storage', fetchUnpaidBills);
+    return () => window.removeEventListener('storage', fetchUnpaidBills);
   }, [user]);
-
 
   if (user && user.role === 'Admin') {
     return null;
@@ -141,7 +145,6 @@ const Navbar = ({ user, onLogout }) => {
           <NavLink to="/dashboard/recipient" className={navLinkStyles}>Dashboard</NavLink>
           <NavLink to="/my-requests" className={navLinkStyles}>Track Requests</NavLink>
           
-          {/* NEW: My Bills Link with Badge */}
           <NavLink to="/my-bills" className={navLinkStyles}>
             My Bills
             {unpaidCount > 0 && (
