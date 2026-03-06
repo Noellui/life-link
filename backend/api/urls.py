@@ -18,12 +18,10 @@ urlpatterns = [
     path('donor/stats/', views.donor_dashboard_stats, name='donor_stats'),
     path('donor/profile/', views.donor_profile_view, name='donor_profile'),
     path('donor/requests/', views.active_requests, name='active_requests'),
-    # FIX: Single canonical route (removed duplicate /api/donor/appointments/ path)
     path('donor/appointments/', views.donor_appointments_list, name='donor_appointments'),
     path('donor/history/', views.donor_history_list, name='donor_history'),
     path('donor/register-event/', views.register_for_event, name='register_event'),
     path('donor/appointments/<int:appointment_id>/cancel/', views.cancel_appointment, name='cancel_appointment'),
-    # NEW: "I Can Donate" interest registration endpoint (server-side log)
     path('donor/interest/', views.express_donor_interest, name='donor_interest'),
     # --- FEATURE 1: CERTIFICATES ---
     path('donor/certificate/<int:appointment_id>/', views.get_certificate_data, name='certificate_data'),
@@ -43,4 +41,11 @@ urlpatterns = [
 
     # --- RECIPIENT ---
     path('recipient/create-request/', views.create_blood_request_raw, name='create_request'),
+
+    # --- IMPROVEMENT 1: RECIPIENT LIVE REQUEST STATUS (with donor interest count) ---
+    path('recipient/requests/', views.get_recipient_requests, name='recipient_requests'),
+
+    # --- IMPROVEMENT 3: BILLING & PAYMENT ---
+    path('recipient/bills/', views.get_recipient_bills, name='recipient_bills'),
+    path('recipient/bills/pay/', views.mark_bill_paid, name='mark_bill_paid'),
 ]
