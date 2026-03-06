@@ -1,19 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, NavLink } from 'react-router-dom';
 
 const Navbar = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isServicesOpen, setIsServicesOpen] = useState(false);
+  const [unpaidCount, setUnpaidCount] = useState(0);
 
   // --- STYLING HELPER ---
-  // This function applies red text and a bottom border when the link is active
   const navLinkStyles = ({ isActive }) => 
-    `transition font-medium pb-1 ${
+    `transition font-medium pb-1 flex items-center gap-1 ${
       isActive 
         ? 'text-red-600 border-b-2 border-red-600' 
         : 'text-gray-600 hover:text-red-600'
     }`;
+
+  // --- FETCH UNPAID BILLS FOR RECIPIENT ---
+  useEffect(() => {
+    const calculateUnpaid = () => {
+      if (user && user.role === 'Recipient') {
+        const storedRequests = JSON.parse(localStorage.getItem('live_blood_requests') || '[]');
+        const userNameToMatch = user.name || "Guest";
+        
+        const userReqs = storedRequests.filter(req => 
+          req.patientName && req.patientName.toLowerCase() === userNameToMatch.toLowerCase()
+        );
+
+        // Count requests that are Approved but not yet Paid
+        let unpaid = userReqs.filter(req => req.status === 'Approved' && req.paymentStatus !== 'Paid').length;
+
+        // Fallback for demo mock data (matches your dashboard logic)
+        if (userReqs.length === 0) {
+          unpaid = 1; 
+        }
+
+        setUnpaidCount(unpaid);
+      }
+    };
+
+    calculateUnpaid();
+
+    // Listen for storage changes so the badge updates immediately when a bill is paid
+    window.addEventListener('storage', calculateUnpaid);
+    return () => window.removeEventListener('storage', calculateUnpaid);
+  }, [user]);
+
 
   if (user && user.role === 'Admin') {
     return null;
@@ -109,6 +140,16 @@ const Navbar = ({ user, onLogout }) => {
         <>
           <NavLink to="/dashboard/recipient" className={navLinkStyles}>Dashboard</NavLink>
           <NavLink to="/my-requests" className={navLinkStyles}>Track Requests</NavLink>
+          
+          {/* NEW: My Bills Link with Badge */}
+          <NavLink to="/my-bills" className={navLinkStyles}>
+            My Bills
+            {unpaidCount > 0 && (
+              <span className="bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full ml-1 animate-pulse">
+                {unpaidCount}
+              </span>
+            )}
+          </NavLink>
 
           <div className="flex items-center space-x-4 ml-4">
             <button onClick={handleLogoutClick} className="text-gray-600 hover:text-red-600 font-medium">Log Out</button>

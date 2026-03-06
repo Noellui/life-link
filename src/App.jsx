@@ -24,6 +24,7 @@ import StockManagement from './pages/StockManagement';
 import MyRequests from './pages/MyRequests';
 import HospitalEvents from './pages/HospitalEvents';
 import HospitalAppointments from './pages/HospitalAppointments';
+import MyBills from './pages/MyBills';
 
 function App() {
   // --- AUTH STATE MANAGEMENT ---
@@ -78,6 +79,7 @@ function App() {
           {/* --- RECIPIENT FEATURES --- */}
           <Route path="/request-blood" element={<RequestBlood />} />
           <Route path="/my-requests" element={<MyRequests />} />
+          <Route path="/my-bills" element={<MyBills />} />
 
           {/* --- DONOR FEATURES --- */}
           <Route path="/DonationCamps" element={<DonationCamps />} />

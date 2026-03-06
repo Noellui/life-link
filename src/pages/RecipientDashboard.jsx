@@ -227,29 +227,11 @@ export default function RecipientDashboard() {
               <span style={styles.badge}>{user.city}</span>
             </p>
           </div>
-          <Link to="/request-blood" style={styles.newRequestBtn}>
-            + New Request
-          </Link>
         </div>
 
         {/* ── TABS ── */}
-        <div style={styles.tabBar}>
-          {[
-            { key: 'dashboard', label: '📋 Dashboard' },
-            { key: 'bills',     label: `💳 My Bills${unpaidCount > 0 ? ` (${unpaidCount})` : ''}` },
-          ].map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              style={{
-                ...styles.tab,
-                ...(activeTab === t.key ? styles.tabActive : {}),
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <div>
+          <p><br></br></p>        </div>
       </header>
 
       <main style={styles.main}>
