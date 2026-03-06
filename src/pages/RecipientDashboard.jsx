@@ -9,10 +9,12 @@ import { Link } from 'react-router-dom';
                           pay-now modal with GST breakdown
    ───────────────────────────────────────────────────────────────────────────── */
 
+const BASE_URL = 'http://127.0.0.1:8000';
+
 const API = {
-  requests : (email) => `/api/recipient/requests/?email=${encodeURIComponent(email)}`,
-  bills    : (email) => `/api/recipient/bills/?email=${encodeURIComponent(email)}`,
-  pay      : '/api/recipient/bills/pay/',
+  requests : (email) => `${BASE_URL}/api/recipient/requests/?email=${encodeURIComponent(email)}`,
+  bills    : (email) => `${BASE_URL}/api/recipient/bills/?email=${encodeURIComponent(email)}`,
+  pay      : `${BASE_URL}/api/recipient/bills/pay/`,
 };
 
 // ── Utility helpers ───────────────────────────────────────────────────────────

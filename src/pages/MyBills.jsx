@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+const BASE_URL = 'http://127.0.0.1:8000';
+
 const API = {
-  bills: (email) => `/api/recipient/bills/?email=${encodeURIComponent(email)}`,
-  pay: '/api/recipient/bills/pay/',
+  bills: (email) => `${BASE_URL}/api/recipient/bills/?email=${encodeURIComponent(email)}`,
+  pay: `${BASE_URL}/api/recipient/bills/pay/`,
 };
 
 const fmt = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
@@ -58,22 +60,26 @@ export default function MyBills() {
 
   // ── Fetch Bills ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!user.email) return;
-    
-    const load = async () => {
-      setBillsLoading(true);
-      try {
-        const res = await fetch(API.bills(user.email));
-        const data = await res.json();
-        setBills(Array.isArray(data) && data.length > 0 ? data : MOCK_BILLS);
-      } catch {
-        setBills(MOCK_BILLS); // Fallback to mock on error
-      } finally {
-        setBillsLoading(false);
-      }
-    };
-    load();
-  }, [user.email]);
+  if (!user.email) return;
+
+  // 1. Define the async function INSIDE the useEffect
+  const fetchBills = async () => {
+    try {
+      const res = await fetch(API.bills(user.email));
+      const data = await res.json();
+      // ONLY use the data from the database, even if it is empty
+      setBills(Array.isArray(data) ? data : []);
+    } catch (error) {
+      // If the server crashes, show an empty list, not fake data
+      console.error("Failed to fetch bills:", error);
+      setBills([]);
+    }
+  };
+
+  // 2. Call the function
+  fetchBills();
+
+}, [user.email]);
 
   // ── Payment Handlers ───────────────────────────────────────────────────────
   const openPayModal = (bill) => {
