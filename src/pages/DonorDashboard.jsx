@@ -35,7 +35,7 @@ const DonorDashboard = () => {
 
   // ---- State --------------------------------------------------
   const [user,        setUser]        = useState(null);
-  const [stats,       setStats]       = useState({ total: 0, lives: 0, lastDate: 'N/A' });
+  const [stats,       setStats]       = useState({});
   const [requests,    setRequests]    = useState([]);
   const [appointment, setAppointment] = useState(null);
   const [history,     setHistory]     = useState([]);
@@ -290,7 +290,7 @@ const DonorDashboard = () => {
 
           {history.length === 0 ? (
             <div className="p-8 text-center text-gray-400">
-              <p>No donations yet. Schedule your first donation!</p>
+              <p>No donation history found in the database. Schedule your first donation!</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
