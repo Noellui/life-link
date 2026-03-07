@@ -1,43 +1,66 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
+const BASE_URL = 'http://127.0.0.1:8000';
+
+const getHospitalEmail = () => {
+  const stored =
+    JSON.parse(localStorage.getItem('user_data') || 'null') ||
+    JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
+  return stored?.email || '';
+};
+
 const BloodTransactionHistory = () => {
-  
   const [transactions, setTransactions] = useState([]);
-  const [filter, setFilter] = useState('ALL'); 
+  const [filter, setFilter] = useState('ALL');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // --- LOAD DATA FROM REAL STOCK LOGS ---
-  useEffect(() => {
-    // 1. Fetch from the global log source
-    const logs = JSON.parse(localStorage.getItem('stock_logs') || '[]');
-    
-    // 2. Format logs for display
-    const formattedLogs = logs.map(log => ({
-      id: log.id,
-      type: log.type === 'Incoming' ? 'IN' : 'OUT',
-      // Parse the timestamp
-      date: log.time ? log.time.split(',')[0] : new Date().toLocaleDateString(),
-      time: log.time ? log.time.split(',')[1] : new Date().toLocaleTimeString(),
-      entity: log.person || "Unknown", // Donor or Patient Name
-      bloodGroup: log.bloodGroup,
-      quantity: Math.ceil((log.quantity || 0) / 450), // Convert ml to Units for display
-      quantityMl: log.quantity, // Keep raw ml for tooltip
-      reason: log.source || "Manual Entry" // e.g., "Event: Mega Drive" or "Req #101"
-    }));
-
-    setTransactions(formattedLogs);
+  const fetchTransactions = useCallback(async () => {
+    const email = getHospitalEmail();
+    if (!email) {
+      setError('Please log in to view stock history.');
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `${BASE_URL}/api/hospital/stock-log/?email=${encodeURIComponent(email)}`
+      );
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const data = await res.json();
+      setTransactions(Array.isArray(data) ? data : []);
+      setError('');
+    } catch (err) {
+      console.error('Failed to fetch stock log:', err);
+      setError('Could not load stock log. Is the Django server running?');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // --- FILTER LOGIC ---
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
+
   const filteredData = transactions.filter(item => {
     if (filter === 'ALL') return true;
     return item.type === filter;
   });
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-500 text-lg animate-pulse">Loading stock log…</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-        
+
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Stock Audit Log 📉</h1>
@@ -53,6 +76,12 @@ const BloodTransactionHistory = () => {
             </Link>
           </div>
         </div>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm">
+            ⚠️ {error}
+          </div>
+        )}
 
         {/* Filter Tabs */}
         <div className="bg-white rounded-t-xl border border-gray-200 border-b-0 p-4 flex gap-2">
@@ -99,7 +128,6 @@ const BloodTransactionHistory = () => {
                       <div className={`text-lg font-bold ${item.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>
                         {item.quantity}
                       </div>
-                      <div className="text-xs text-gray-400">({item.quantityMl} ml)</div>
                     </td>
                     <td className="px-6 py-4 text-xs font-medium text-gray-500">
                       {item.reason}
@@ -108,8 +136,8 @@ const BloodTransactionHistory = () => {
                 ))}
               </tbody>
             </table>
-            
-            {filteredData.length === 0 && (
+
+            {filteredData.length === 0 && !loading && (
               <div className="p-12 text-center text-gray-400 border-t border-gray-100">
                 <p className="text-lg">No records found.</p>
                 <p className="text-sm">Start by recording donations in Events or processing Patient Requests.</p>

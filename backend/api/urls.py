@@ -40,6 +40,7 @@ urlpatterns = [
     path('hospital/events/', views.hospital_events_list, name='hospital_events_list'),
     path('hospital/events/create/', views.hospital_events_create, name='hospital_events_create'),
     path('hospital/events/<int:event_id>/donors/', views.hospital_event_donors, name='hospital_event_donors'),
+    path('hospital/stock-log/', views.hospital_stock_log, name='hospital_stock_log'),
 
     # --- RAW SQL ENDPOINTS ---
     path('requests/create-raw/', views.create_blood_request_raw, name='create_blood_request_raw'),

@@ -1451,3 +1451,90 @@ def hospital_event_donors(request, event_id):
         return JsonResponse(data, safe=False)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# =============================================================================
+# HOSPITAL STOCK AUDIT LOG
+# GET /api/hospital/stock-log/?email=<hospital_user_email>
+# =============================================================================
+
+def hospital_stock_log(request):
+    email = request.GET.get("email")
+    if not email:
+        return JsonResponse({"error": "email required"}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT h.hospital_id
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s LIMIT 1
+            """, [email])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({"error": "Hospital not found"}, status=404)
+            hospital_id = row[0]
+
+            cursor.execute("""
+                SELECT
+                    bs.unit_id,
+                    bs.expiry_date,
+                    bt.blood_type,
+                    bs.quantity,
+                    COALESCE(u.full_name, "Manual Entry") AS donor_name,
+                    COALESCE(e.event_title, "Direct Donation") AS source
+                FROM blood_storage_tbl bs
+                LEFT JOIN blood_type_tbl bt ON bs.blood_id = bt.blood_id
+                LEFT JOIN appointment_tbl a ON bs.appointment_id = a.appointment_id
+                LEFT JOIN donor_tbl d ON a.donor_id = d.donor_id
+                LEFT JOIN user_registration_tbl u ON d.user_id = u.user_id
+                LEFT JOIN event_tbl e ON a.event_id = e.event_id
+                WHERE bs.hospital_id = %s
+                ORDER BY bs.unit_id DESC
+            """, [hospital_id])
+            in_rows = cursor.fetchall()
+
+            cursor.execute("""
+                SELECT
+                    br.request_id,
+                    br.request_date,
+                    br.blood_group,
+                    br.units,
+                    COALESCE(r.full_name, "Unknown Patient") AS patient_name,
+                    CONCAT("Request #", br.request_id) AS source
+                FROM blood_request_tbl br
+                LEFT JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
+                WHERE br.hospital_id = %s AND br.status = "Fulfilled"
+                ORDER BY br.request_date DESC
+            """, [hospital_id])
+            out_rows = cursor.fetchall()
+
+        transactions = []
+        for row in in_rows:
+            unit_id, expiry_date, blood_type, quantity, donor_name, source = row
+            transactions.append({
+                "id":        f"in-{unit_id}",
+                "type":      "IN",
+                "date":      expiry_date.strftime("%Y-%m-%d") if expiry_date else "N/A",
+                "time":      "",
+                "entity":    donor_name,
+                "bloodGroup": blood_type or "N/A",
+                "quantity":  quantity,
+                "reason":    source,
+            })
+        for row in out_rows:
+            req_id, req_date, blood_group, units, patient_name, source = row
+            transactions.append({
+                "id":        f"out-{req_id}",
+                "type":      "OUT",
+                "date":      req_date.strftime("%Y-%m-%d") if req_date else "N/A",
+                "time":      req_date.strftime("%I:%M %p") if req_date else "",
+                "entity":    patient_name,
+                "bloodGroup": blood_group or "N/A",
+                "quantity":  units,
+                "reason":    source,
+            })
+        transactions.sort(key=lambda x: x["date"], reverse=True)
+        return JsonResponse(transactions, safe=False)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
