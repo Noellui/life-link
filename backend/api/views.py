@@ -58,7 +58,6 @@ def register_view(request):
             role  = data.get('role')
             token = get_random_string(64)
 
-            # Auto-activate Recipients so they don't need email verification
             initial_status = 'Active' if role == 'Recipient' else 'Pending'
             assigned_token = None if role == 'Recipient' else token
 
@@ -133,7 +132,6 @@ def register_view(request):
                         data.get('address', 'Hospital Admission')
                     ])
 
-            # Skip email sending completely for Recipients
             if role != 'Recipient':
                 verify_url = (
                     f"http://localhost:8000/api/verify-email/"
@@ -719,17 +717,13 @@ def get_certificate_data(request, appointment_id):
 
 # =============================================================================
 # ADMIN DASHBOARD & REPORTS
-# ── Now accepts ?hospital_id=<id> to scope stats to a single hospital
-# ── Also returns the real hospital_name when hospital_id is provided
 # =============================================================================
 
 def admin_dashboard_stats(request):
     try:
-        # 1. Get hospital_id and cast to int to avoid string vs int mismatch
         hospital_id_raw = request.GET.get('hospital_id')
         hospital_id = int(hospital_id_raw) if hospital_id_raw else None
 
-        # 2. Fetch the actual hospital name using raw SQL (most reliable)
         hospital_name = "Central Admin Dashboard"
         if hospital_id:
             with connection.cursor() as cursor:
@@ -741,11 +735,8 @@ def admin_dashboard_stats(request):
                 if row:
                     hospital_name = row[0]
 
-        # 3. All queries use raw SQL directly against DB columns
-        # blood_storage_tbl HAS a hospital_id column in the real DB (just missing from Django model)
         with connection.cursor() as cursor:
 
-            # --- Global user counts ---
             cursor.execute("SELECT COUNT(*) FROM user_registration_tbl WHERE user_role = 'Donor'")
             donor_count = cursor.fetchone()[0]
 
@@ -755,7 +746,6 @@ def admin_dashboard_stats(request):
             cursor.execute("SELECT COUNT(*) FROM user_registration_tbl WHERE user_role = 'Recipient'")
             recipient_count = cursor.fetchone()[0]
 
-            # --- Total units in storage (direct hospital_id filter) ---
             if hospital_id:
                 cursor.execute(
                     "SELECT COALESCE(SUM(quantity), 0) FROM blood_storage_tbl WHERE hospital_id = %s AND status = 'Available'",
@@ -765,7 +755,6 @@ def admin_dashboard_stats(request):
                 cursor.execute("SELECT COALESCE(SUM(quantity), 0) FROM blood_storage_tbl WHERE status = 'Available'")
             total_units = cursor.fetchone()[0]
 
-            # --- Pending requests ---
             if hospital_id:
                 cursor.execute(
                     "SELECT COUNT(*) FROM blood_request_tbl WHERE status = 'Pending' AND hospital_id = %s",
@@ -775,7 +764,6 @@ def admin_dashboard_stats(request):
                 cursor.execute("SELECT COUNT(*) FROM blood_request_tbl WHERE status = 'Pending'")
             pending_requests = cursor.fetchone()[0]
 
-            # --- Inventory per blood type: LEFT JOIN so all 8 types always appear ---
             if hospital_id:
                 cursor.execute("""
                     SELECT
@@ -803,7 +791,6 @@ def admin_dashboard_stats(request):
                 """)
             inventory_rows = cursor.fetchall()
 
-            # --- Monthly activity ---
             activity = []
             for i in range(3):
                 d = datetime.date.today() - datetime.timedelta(days=i * 30)
@@ -841,7 +828,6 @@ def admin_dashboard_stats(request):
                     'outcome':   f"{don - req:+}",
                 })
 
-        # 4. Build inventory list from raw SQL results
         inventory = []
         for blood_type, count in inventory_rows:
             inventory.append({
@@ -891,11 +877,6 @@ def delete_user(request, user_id):
 # =============================================================================
 
 def get_hospital_id(request):
-    """
-    GET /api/hospital/id/?email=...
-    Returns the hospital_id for a logged-in Hospital user.
-    The HospitalDashboard calls this once on mount instead of hardcoding 9001.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'error': 'email required'}, status=400)
@@ -911,6 +892,120 @@ def get_hospital_id(request):
         if not row:
             return JsonResponse({'error': 'Hospital profile not found'}, status=404)
         return JsonResponse({'hospitalId': row[0], 'hospitalName': row[1]})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# =============================================================================
+# HOSPITAL: Get patient blood requests for a specific hospital
+# GET /api/hospital/requests/?email=...
+# =============================================================================
+
+def get_hospital_requests(request):
+    email = request.GET.get('email')
+    if not email:
+        return JsonResponse({'error': 'email required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            # Resolve hospital_id from the logged-in hospital user's email
+            cursor.execute("""
+                SELECT h.hospital_id
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s
+            """, [email])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Hospital not found'}, status=404)
+            hospital_id = row[0]
+
+            # Fetch all blood requests assigned to this hospital
+            cursor.execute("""
+                SELECT
+                    br.request_id,
+                    br.blood_group,
+                    br.units,
+                    br.urgency,
+                    br.status,
+                    br.request_date,
+                    br.doctor_name,
+                    r.full_name        AS patient_name,
+                    r.contact_number,
+                    r.address
+                FROM blood_request_tbl br
+                JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
+                WHERE br.hospital_id = %s
+                ORDER BY br.request_date DESC
+            """, [hospital_id])
+            rows = cursor.fetchall()
+
+        results = []
+        for row in rows:
+            (req_id, blood_group, units, urgency, status,
+             req_date, doctor_name, patient_name, contact, address) = row
+            # Infer gender/age from address if not available — keep N/A otherwise
+            results.append({
+                'id':          req_id,
+                'bloodGroup':  blood_group,
+                'bloodType':   blood_group,
+                'units':       units,
+                'urgency':     urgency,
+                'status':      status,
+                'date':        req_date.strftime('%Y-%m-%d') if req_date else 'N/A',
+                'doctor':      doctor_name or 'External Request',
+                'patient':     patient_name or 'Unknown',
+                'patientName': patient_name or 'Unknown',
+                'age':         'N/A',
+                'gender':      'N/A',
+            })
+        return JsonResponse(results, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# =============================================================================
+# HOSPITAL: Update blood request status (Approve / Reject / Undo)
+# POST /api/requests/<request_id>/update-status/
+# =============================================================================
+
+@csrf_exempt
+def update_request_status(request, request_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data       = json.loads(request.body)
+        new_status = data.get('status')   # 'Approved', 'Rejected', or 'Pending'
+        email      = data.get('email')    # hospital user email for ownership check
+
+        if new_status not in ('Approved', 'Rejected', 'Pending'):
+            return JsonResponse({'error': 'Invalid status value'}, status=400)
+
+        with connection.cursor() as cursor:
+            # Optional ownership check — only let the owning hospital update
+            if email:
+                cursor.execute("""
+                    SELECT br.request_id
+                    FROM blood_request_tbl br
+                    JOIN hospital_registration_tbl h ON br.hospital_id = h.hospital_id
+                    JOIN user_registration_tbl u ON h.user_id = u.user_id
+                    WHERE br.request_id = %s AND u.email = %s
+                """, [request_id, email])
+                if not cursor.fetchone():
+                    return JsonResponse(
+                        {'error': 'Not authorised or request not found'}, status=403
+                    )
+
+            cursor.execute(
+                "UPDATE blood_request_tbl SET status = %s WHERE request_id = %s",
+                [new_status, request_id]
+            )
+            if cursor.rowcount == 0:
+                return JsonResponse({'error': 'Request not found'}, status=404)
+
+        return JsonResponse({
+            'message': f'Request updated to {new_status}',
+            'status':  new_status,
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

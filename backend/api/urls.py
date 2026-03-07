@@ -33,6 +33,9 @@ urlpatterns = [
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),
     path('appointments/<int:appointment_id>/fulfill/', views.fulfill_appointment_view, name='fulfill_appointment'),
+    # NEW: hospital-scoped patient requests + status update
+    path('hospital/requests/', views.get_hospital_requests, name='hospital_requests'),
+    path('requests/<int:request_id>/update-status/', views.update_request_status, name='update_request_status'),
 
     # --- RAW SQL ENDPOINTS ---
     path('requests/create-raw/', views.create_blood_request_raw, name='create_blood_request_raw'),
