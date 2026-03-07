@@ -1538,3 +1538,98 @@ def hospital_stock_log(request):
         return JsonResponse(transactions, safe=False)
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+
+# =============================================================================
+# HOSPITAL PATIENT REQUESTS
+# GET  /api/hospital/requests/?email=<hospital_user_email>
+# POST /api/requests/<id>/update-status/  { "status": "Approved"|"Rejected"|"Pending" }
+# =============================================================================
+
+def hospital_requests_list(request):
+    """
+    Returns all blood requests submitted to this hospital.
+    """
+    email = request.GET.get('email')
+    if not email:
+        return JsonResponse({'error': 'email required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            # Resolve hospital_id
+            cursor.execute("""
+                SELECT h.hospital_id
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s LIMIT 1
+            """, [email])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Hospital not found'}, status=404)
+            hospital_id = row[0]
+
+            cursor.execute("""
+                SELECT
+                    br.request_id,
+                    br.blood_group,
+                    br.units,
+                    br.urgency,
+                    br.status,
+                    br.request_date,
+                    br.doctor_name,
+                    COALESCE(r.full_name, 'Unknown Patient') AS patient_name,
+                    COALESCE(r.contact_number, 'N/A')        AS contact,
+                    COALESCE(r.address, 'N/A')               AS address
+                FROM blood_request_tbl br
+                LEFT JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
+                WHERE br.hospital_id = %s
+                ORDER BY br.request_date DESC
+            """, [hospital_id])
+            rows = cursor.fetchall()
+
+        data = []
+        for row in rows:
+            (req_id, blood_group, units, urgency, status,
+             req_date, doctor, patient, contact, address) = row
+            data.append({
+                'id':         req_id,
+                'bloodGroup': blood_group,
+                'units':      units,
+                'urgency':    urgency,
+                'status':     status,
+                'date':       req_date.strftime('%Y-%m-%d') if req_date else 'N/A',
+                'doctor':     doctor or 'N/A',
+                'patient':    patient,
+                'contact':    contact,
+                'address':    address,
+                'gender':     'N/A',
+                'age':        'N/A',
+            })
+        return JsonResponse(data, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def update_request_status(request, request_id):
+    """
+    Updates a blood request status to Approved, Rejected, or Pending.
+    POST body: { "status": "Approved" | "Rejected" | "Pending" }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data       = json.loads(request.body)
+        new_status = data.get('status')
+        if new_status not in ('Approved', 'Rejected', 'Pending', 'Fulfilled'):
+            return JsonResponse({'error': 'Invalid status value'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE blood_request_tbl SET status = %s WHERE request_id = %s",
+                [new_status, request_id]
+            )
+            if cursor.rowcount == 0:
+                return JsonResponse({'error': 'Request not found'}, status=404)
+        return JsonResponse({'message': f'Request marked as {new_status}.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
