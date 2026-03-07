@@ -20,64 +20,48 @@ const HospitalDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [stats, setStats] = useState({ totalUnits: 0, criticalAlerts: 0, pendingCount: 0 });
 
-  // --- EFFECT: LOAD ALL DATA (Inventory & Requests) ---
+  // --- EFFECT: LOAD ALL DATA (Fetched from Backend) ---
   useEffect(() => {
-    // 1. CALCULATE INVENTORY FROM LOGS
-    const logs = JSON.parse(localStorage.getItem('stock_logs') || '[]');
-    const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    const fetchDashboardData = async () => {
+      try {
+        // 1. Fetch live stats and inventory from backend
+        // Note: Using hospital_id=9001 as per your new logic
+        const statsResponse = await fetch('http://localhost:8000/api/admin/stats/?hospital_id=9001');
+        if (statsResponse.ok) {
+          const data = await statsResponse.json();
 
-    const calculatedInventory = bloodTypes.map(type => {
-      // Filter logs for this specific type
-      const incoming = logs
-        .filter(l => l.bloodGroup === type && l.type === 'Incoming')
-        .reduce((acc, curr) => acc + (curr.quantity || 0), 0);
-      
-      const outgoing = logs
-        .filter(l => l.bloodGroup === type && l.type === 'Outgoing')
-        .reduce((acc, curr) => acc + (curr.quantity || 0), 0);
+          const formattedInventory = data.inventory.map(item => ({
+            type: item.type,
+            units: item.count,
+            status: item.status
+          }));
 
-      // Convert ml to Units (450ml = 1 Unit)
-      // If logs are empty, use a default mock value for demo purposes
-      let units = Math.floor((incoming - outgoing) / 450);
-      
-      // Default Mock Data injection if system is empty (for first-time view)
-      if (logs.length === 0) {
-        if (type === 'O+') units = 15;
-        if (type === 'A+') units = 12;
-        if (type === 'AB-') units = 1;
-        if (type === 'B-') units = 0;
+          setInventory(formattedInventory);
+
+          setStats({
+            totalUnits: data.stats.total_units,
+            criticalAlerts: data.inventory.filter(i => i.status === 'Critical').length,
+            pendingCount: data.stats.pending_requests
+          });
+        }
+
+        // 2. Fetch live requests
+        const reqResponse = await fetch('http://localhost:8000/api/donor/requests/');
+        if (reqResponse.ok) {
+          const reqData = await reqResponse.json();
+          const formattedRequests = reqData.map(req => ({
+            ...req,
+            type: req.type || "Online Request" // Fallback if type isn't provided
+          }));
+          setRequests(formattedRequests);
+        }
+      } catch (error) {
+        console.error("Error connecting to backend:", error);
       }
+    };
 
-      // Determine Status
-      let status = 'Good';
-      if (units <= 2) status = 'Critical';
-      else if (units <= 5) status = 'Low';
-      else if (units <= 8) status = 'Moderate';
-
-      return { type, units: units > 0 ? units : 0, status };
-    });
-
-    setInventory(calculatedInventory);
-
-    // 2. FETCH REQUESTS
-    const storedRequests = JSON.parse(localStorage.getItem('live_blood_requests') || '[]');
-    // Add some dummy defaults if empty
-    const defaultRequests = [
-      { id: 101, patientName: "Sarah Jenkins", bloodGroup: "A-", units: 2, doctor: "Dr. Smith", urgency: "High", status: "Pending", type: "Internal Admission" },
-      { id: 102, patientName: "Mike Ross", bloodGroup: "O+", units: 1, doctor: "Dr. Zane", urgency: "Routine", status: "Pending", type: "Internal Admission" },
-    ];
-    
-    const combinedRequests = [...storedRequests, ...defaultRequests];
-    setRequests(combinedRequests);
-
-    // 3. UPDATE STATS
-    const totalUnits = calculatedInventory.reduce((acc, curr) => acc + curr.units, 0);
-    const critical = calculatedInventory.filter(i => i.status === 'Critical').length;
-    const pending = combinedRequests.filter(r => r.status === 'Pending').length;
-
-    setStats({ totalUnits, criticalAlerts: critical, pendingCount: pending });
-
-  }, [activeModal]); // Re-run when modals close (in case data changed)
+    fetchDashboardData();
+  }, [activeModal]); // Re-run when modals close to refresh data
 
   // --- HANDLERS ---
   const handlePatientChange = (e) => setNewPatient({ ...newPatient, [e.target.name]: e.target.value });
@@ -90,56 +74,125 @@ const HospitalDashboard = () => {
     return pass;
   };
 
-  // 1. SUBMIT PATIENT (Saves to Global Requests)
-  const handlePatientSubmit = (e) => {
+  // 1. SUBMIT PATIENT (Registers User AND Creates Blood Request)
+  const handlePatientSubmit = async (e) => {
     e.preventDefault();
     const tempPassword = generatePassword();
-    const patientID = "PAT-" + Math.floor(1000 + Math.random() * 9000); 
 
-    const newRequest = {
-      id: Date.now(),
-      patientName: newPatient.name, // Standardized key
-      bloodGroup: newPatient.bloodType, // Standardized key
-      units: parseInt(newPatient.units),
-      doctor: newPatient.doctor,
-      urgency: newPatient.urgency,
-      status: "Pending",
-      type: "Internal Admission",
-      city: "Vadodara",
-      date: new Date().toLocaleDateString()
+    // STEP 1: Register the Patient as a User
+    const registerPayload = {
+      fullName: newPatient.name,
+      email: newPatient.email,
+      password: tempPassword,
+      phone: newPatient.contact || '0000000000',
+      role: 'Recipient'
     };
 
-    // Update Local State for immediate feedback
-    setRequests([newRequest, ...requests]);
+    try {
+      const regRes = await fetch('http://localhost:8000/api/register/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(registerPayload)
+      });
 
-    // Update Global Storage (So Donor Dashboard sees it)
-    const existingGlobal = JSON.parse(localStorage.getItem('live_blood_requests') || '[]');
-    localStorage.setItem('live_blood_requests', JSON.stringify([newRequest, ...existingGlobal]));
+      if (!regRes.ok) {
+        const err = await regRes.json();
+        alert(`Registration failed: ${err.error}`);
+        return;
+      }
 
-    setRegistrationSuccess({ 
-      type: 'Patient', 
-      id: patientID, 
-      name: newPatient.name, 
-      email: newPatient.email, 
-      password: tempPassword 
-    });
+      const regData = await regRes.json();
+      const newUserId = regData.userId;
+
+      // STEP 2: Create the Blood Request using the new User ID
+      const requestPayload = {
+        userId: newUserId,
+        bloodGroup: newPatient.bloodType,
+        units: parseInt(newPatient.units),
+        urgency: newPatient.urgency,
+        doctorName: newPatient.doctor,
+        hospitalId: 9001,
+      };
+
+      const reqRes = await fetch('http://localhost:8000/api/recipient/create-request/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPayload)
+      });
+
+      if (reqRes.ok) {
+        const reqResult = await reqRes.json();
+
+        // Local update for immediate UI feel
+        const newRequest = {
+          id: reqResult.requestId,
+          patientName: newPatient.name,
+          bloodGroup: newPatient.bloodType,
+          units: parseInt(newPatient.units),
+          doctor: newPatient.doctor,
+          urgency: newPatient.urgency,
+          status: "Pending",
+          type: "Internal Admission",
+        };
+
+        setRequests([newRequest, ...requests]);
+
+        setRegistrationSuccess({ 
+          type: 'Patient', 
+          id: `REQ-${reqResult.requestId}`, 
+          name: newPatient.name, 
+          email: newPatient.email, 
+          password: tempPassword 
+        });
+      } else {
+        alert("Patient registered, but failed to create blood request.");
+      }
+
+    } catch (error) {
+      alert("Error connecting to the server.");
+    }
   };
 
-  // 2. SUBMIT DONOR (Simulated Registration)
-  const handleDonorSubmit = (e) => {
+  // 2. SUBMIT DONOR (Posts to Backend Registration)
+  const handleDonorSubmit = async (e) => {
     e.preventDefault();
     const tempPassword = generatePassword();
-    const donorID = "DON-" + Math.floor(1000 + Math.random() * 9000);
 
-    // In a real app, this would create a user in the DB.
-    // Here we just generate credentials.
-    setRegistrationSuccess({ 
-      type: 'Donor', 
-      id: donorID, 
-      name: newDonor.name, 
-      email: newDonor.email, 
-      password: tempPassword 
-    });
+    const payload = {
+      fullName: newDonor.name,
+      email: newDonor.email,
+      password: tempPassword,
+      phone: newDonor.phone,
+      role: 'Donor',
+      bloodGroup: newDonor.bloodGroup,
+      city: newDonor.city,
+      gender: newDonor.gender,
+      dob: '2000-01-01', // Default as per new logic
+      weight: 65
+    };
+
+    try {
+      const response = await fetch('http://localhost:8000/api/register/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        setRegistrationSuccess({ 
+          type: 'Donor', 
+          id: 'Pending Verification', 
+          name: newDonor.name, 
+          email: newDonor.email, 
+          password: tempPassword 
+        });
+      } else {
+        const err = await response.json();
+        alert(`Failed to register donor: ${err.error}`);
+      }
+    } catch (error) {
+      alert("Error connecting to the server.");
+    }
   };
 
   const closeAndReset = () => {
@@ -179,7 +232,7 @@ const HospitalDashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
         
-        {/* 2. Key Metrics Cards (Dynamic) */}
+        {/* 2. Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
@@ -207,11 +260,11 @@ const HospitalDashboard = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* 3. Inventory Overview (Calculated from Logs) */}
+          {/* 3. Inventory Overview */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <h3 className="text-lg font-bold text-gray-800">Live Blood Inventory</h3>
-              <span className="text-xs text-gray-500">Auto-calculated from logs</span>
+              <span className="text-xs text-gray-500">Synced with Database</span>
             </div>
             <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
               {inventory.map((item) => (
@@ -220,7 +273,7 @@ const HospitalDashboard = () => {
                 }`}>
                   <h4 className="text-2xl font-black text-gray-800 mb-1">{item.type}</h4>
                   <p className={`text-sm font-medium mb-2 ${
-                    item.status === 'Good' ? 'text-green-600' : 'text-red-600'
+                    item.status === 'Stable' || item.status === 'Good' ? 'text-green-600' : 'text-red-600'
                   }`}>{item.status}</p>
                   <div className="bg-gray-100 rounded-lg px-3 py-1">
                     <span className="font-bold text-gray-800 text-lg">{item.units}</span>
@@ -234,7 +287,7 @@ const HospitalDashboard = () => {
             </div>
           </div>
 
-          {/* 4. Recent Requests (Live) */}
+          {/* 4. Recent Requests */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
               <h3 className="text-lg font-bold text-gray-800">Recent Requests</h3>
@@ -245,7 +298,7 @@ const HospitalDashboard = () => {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="font-bold text-gray-900">{req.patientName || req.patient}</p>
-                      <p className="text-xs text-gray-500">#{req.id} • {req.doctor || 'Online Request'}</p>
+                      <p className="text-xs text-gray-500">#{req.id} • {req.doctor || 'Emergency Dept'}</p>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-bold ${
                       req.bloodGroup === 'AB-' || req.bloodGroup === 'O-' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'

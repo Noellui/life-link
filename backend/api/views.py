@@ -58,6 +58,10 @@ def register_view(request):
             role  = data.get('role')
             token = get_random_string(64)
 
+            # Auto-activate Recipients so they don't need email verification
+            initial_status = 'Active' if role == 'Recipient' else 'Pending'
+            assigned_token = None if role == 'Recipient' else token
+
             with connection.cursor() as cursor:
                 cursor.execute(
                     "SELECT 1 FROM user_registration_tbl WHERE email = %s", [email]
@@ -71,7 +75,7 @@ def register_view(request):
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, [
                     data.get('fullName'), email, data.get('password'),
-                    data.get('phone'), role, 'Pending', token
+                    data.get('phone'), role, initial_status, assigned_token
                 ])
                 new_user_id = cursor.lastrowid
 
@@ -109,22 +113,54 @@ def register_view(request):
                         data.get('city', 'Vadodara'),
                     ])
 
-            verify_url = (
-                f"http://localhost:8000/api/verify-email/"
-                f"?token={token}&email={email}"
-            )
-            send_mail(
-                'Verify your LifeLink Account',
-                f'Please click the link to verify your account: {verify_url}',
-                'noreply@lifelink.com',
-                [email],
-                fail_silently=False,
-            )
-            return JsonResponse(
-                {'message': 'Registration successful! Verification email sent.'},
-                status=201
-            )
+                elif role == 'Recipient':
+                    cursor.execute(
+                        "SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s",
+                        [data.get('bloodGroup', 'O+')]
+                    )
+                    blood_res = cursor.fetchone()
+                    blood_id  = blood_res[0] if blood_res else None
+
+                    cursor.execute("""
+                        INSERT INTO recipient_tbl
+                        (user_id, full_name, blood_id, contact_number, address)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, [
+                        new_user_id,
+                        data.get('fullName', ''),
+                        blood_id,
+                        data.get('phone', '0000000000'),
+                        data.get('address', 'Hospital Admission')
+                    ])
+
+            # Skip email sending completely for Recipients
+            if role != 'Recipient':
+                verify_url = (
+                    f"http://localhost:8000/api/verify-email/"
+                    f"?token={token}&email={email}"
+                )
+                send_mail(
+                    'Verify your LifeLink Account',
+                    f'Please click the link to verify your account: {verify_url}',
+                    'noreply@lifelink.com',
+                    [email],
+                    fail_silently=True,
+                )
+                return JsonResponse(
+                    {'message': 'Registration successful! Verification email sent.'},
+                    status=201
+                )
+            else:
+                return JsonResponse(
+                    {
+                        'message': 'Patient registered successfully and auto-activated!',
+                        'userId': new_user_id
+                    },
+                    status=201
+                )
+
         except Exception as e:
+            print(f"Registration Error: {e}")
             return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -194,19 +230,8 @@ def donor_dashboard_stats(request):
 
 
 def active_requests(request):
-    """
-    Returns active Pending blood requests filtered by the donor's city.
-
-    CITY-BASED FILTERING:
-    Accepts ?email=... so the donor's city can be looked up from their profile.
-    Only requests whose hospital.city matches the donor's city are returned,
-    preventing notification fatigue from far-away requests the donor cannot
-    realistically act on.  Falls back to all-city results if no email is given.
-    """
     email = request.GET.get('email')
-
     try:
-        # 1. Look up the donor's city from their profile
         donor_city = None
         if email:
             user  = UserRegistrationTbl.objects.filter(email=email).first()
@@ -214,16 +239,13 @@ def active_requests(request):
             if donor and donor.city:
                 donor_city = donor.city
 
-        # 2. Build the base queryset
         query = BloodRequestTbl.objects.select_related(
             'recipient', 'hospital'
         ).filter(status='Pending')
 
-        # 3. Filter by donor's city (case-insensitive match on hospital city)
         if donor_city:
             query = query.filter(hospital__city__iexact=donor_city)
 
-        # 4. Take the 4 most recent local requests
         reqs = query.order_by('-request_date')[:4]
 
         data = []
@@ -252,7 +274,6 @@ def active_requests(request):
 
 
 def donor_appointments_list(request):
-    """Returns the most recent non-fulfilled appointment for the donor."""
     email = request.GET.get('email')
     try:
         user = UserRegistrationTbl.objects.filter(email=email).first()
@@ -413,11 +434,6 @@ def cancel_appointment(request, appointment_id):
 
 @csrf_exempt
 def donor_interest_view(request):
-    """
-    POST { email, requestId }
-    Creates a Pending appointment for the donor at the hospital that owns the
-    blood request. Prevents duplicate submissions for the same hospital.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -474,12 +490,6 @@ def donor_interest_view(request):
 
 @csrf_exempt
 def express_donor_interest(request):
-    """
-    POST { email, requestId }
-    Logs interest to donor_interest_log.
-    Used by the recipient dashboard to surface donorInterestCount.
-    Falls back gracefully if the table does not yet exist.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -525,11 +535,6 @@ def express_donor_interest(request):
 # =============================================================================
 
 def get_donor_notifications(request):
-    """
-    GET ?email=...
-    Returns notifications derived from appointment status changes and
-    urgent blood requests matching the donor's blood type.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse([], safe=False)
@@ -626,10 +631,6 @@ def get_donor_notifications(request):
 # =============================================================================
 
 def get_donor_eligibility(request):
-    """
-    GET ?email=...
-    Returns last fulfilled donation date and the 56-day eligibility window.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'eligible': True, 'daysRemaining': 0, 'lastDonation': None})
@@ -676,11 +677,6 @@ def get_donor_eligibility(request):
 # =============================================================================
 
 def get_certificate_data(request, appointment_id):
-    """
-    GET /api/donor/certificate/<appointment_id>/
-    Returns verified donation data for PDF certificate generation.
-    Only available for Fulfilled appointments.
-    """
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -723,21 +719,39 @@ def get_certificate_data(request, appointment_id):
 
 # =============================================================================
 # ADMIN DASHBOARD & REPORTS
+# ── Now accepts ?hospital_id=<id> to scope stats to a single hospital ─────────
 # =============================================================================
 
 def admin_dashboard_stats(request):
     try:
+        # 1. Check if a specific hospital is requesting its own stats
+        hospital_id = request.GET.get('hospital_id')
+
+        # 2. Base querysets
+        storage_qs = BloodStorageTbl.objects.all()
+        request_qs = BloodRequestTbl.objects.all()
+        appt_qs    = AppointmentTbl.objects.all()
+
+        # 3. Scope to a single hospital when hospital_id is supplied
+        if hospital_id:
+            storage_qs = storage_qs.filter(hospital_id=hospital_id)
+            request_qs = request_qs.filter(hospital_id=hospital_id)
+            appt_qs    = appt_qs.filter(hospital_id=hospital_id)
+
+        # 4. Global user counts are always global; storage/requests are scoped
         stats = {
             'donors':           UserRegistrationTbl.objects.filter(user_role='Donor').count(),
             'hospitals':        UserRegistrationTbl.objects.filter(user_role='Hospital').count(),
             'recipients':       UserRegistrationTbl.objects.filter(user_role='Recipient').count(),
-            'total_units':      BloodStorageTbl.objects.aggregate(total=Sum('quantity'))['total'] or 0,
-            'pending_requests': BloodRequestTbl.objects.filter(status='Pending').count(),
+            'total_units':      storage_qs.aggregate(total=Sum('quantity'))['total'] or 0,
+            'pending_requests': request_qs.filter(status='Pending').count(),
         }
+
+        # 5. Inventory per blood type (scoped)
         inventory = []
         for bt in BloodTypeTbl.objects.all():
             count = (
-                BloodStorageTbl.objects
+                storage_qs
                 .filter(blood_id=bt.blood_id)
                 .aggregate(total=Sum('quantity'))['total'] or 0
             )
@@ -747,19 +761,22 @@ def admin_dashboard_stats(request):
                 'capacity': 100,
                 'status':   'Critical' if count == 0 else ('Low' if count < 10 else 'Stable'),
             })
+
+        # 6. Monthly activity (scoped)
         activity = []
         for i in range(3):
             d   = datetime.date.today() - datetime.timedelta(days=i * 30)
-            don = AppointmentTbl.objects.filter(
+            don = appt_qs.filter(
                 status='Fulfilled', appointment_date__month=d.month
             ).count()
-            req = BloodRequestTbl.objects.filter(request_date__month=d.month).count()
+            req = request_qs.filter(request_date__month=d.month).count()
             activity.append({
                 'month':     d.strftime('%B'),
                 'donations': don,
                 'requests':  req,
                 'outcome':   f"{don - req:+}",
             })
+
         return JsonResponse({
             'stats':            stats,
             'inventory':        inventory,
@@ -778,16 +795,39 @@ def user_list(request):
 
 @csrf_exempt
 def delete_user(request, user_id):
-    """
-    DELETE /api/admin/users/<user_id>/
-    Bans a user account.
-    SECURITY: Only DELETE accepted — prevents accidental GET-triggered bans.
-    React call: fetch(`/api/admin/users/${id}/`, { method: 'DELETE' })
-    """
     if request.method == 'DELETE':
         UserRegistrationTbl.objects.filter(user_id=user_id).update(status='Banned')
         return JsonResponse({'message': 'User disabled successfully'})
     return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+# =============================================================================
+# HOSPITAL: get hospital_id for a logged-in hospital user
+# =============================================================================
+
+def get_hospital_id(request):
+    """
+    GET /api/hospital/id/?email=...
+    Returns the hospital_id for a logged-in Hospital user.
+    The HospitalDashboard calls this once on mount instead of hardcoding 9001.
+    """
+    email = request.GET.get('email')
+    if not email:
+        return JsonResponse({'error': 'email required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT h.hospital_id, h.hospital_name
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s
+            """, [email])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Hospital profile not found'}, status=404)
+        return JsonResponse({'hospitalId': row[0], 'hospitalName': row[1]})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 # =============================================================================
@@ -814,12 +854,6 @@ def event_list(request):
 
 @csrf_exempt
 def delete_event_view(request, event_id):
-    """
-    DELETE /api/admin/events/<event_id>/
-    Removes a blood drive event.
-    SECURITY: Only DELETE accepted.
-    React call: fetch(`/api/admin/events/${id}/`, { method: 'DELETE' })
-    """
     if request.method == 'DELETE':
         EventTbl.objects.filter(event_id=event_id).delete()
         return JsonResponse({'message': 'Event successfully removed'})
@@ -849,16 +883,6 @@ def fulfill_appointment_view(request, appointment_id):
 
 @csrf_exempt
 def create_blood_request_raw(request):
-    """
-    POST { userId, bloodGroup, units, urgency, doctorName, hospitalId?, city? }
-
-    IMPROVEMENT — Global City-Wide Requests:
-        hospitalId: null  →  city-wide broadcast stored with hospital_id = NULL
-                              visible to ALL partner hospitals in the recipient's city
-        hospitalId: 9001  →  targeted single-hospital request
-
-    The old hardcoded fallback to hospital_id 9001 has been removed.
-    """
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -871,7 +895,7 @@ def create_blood_request_raw(request):
                 if not recipient:
                     return JsonResponse({'error': 'Recipient profile not found'}, status=404)
 
-                hospital_id = data.get('hospitalId')   # None → NULL in DB
+                hospital_id = data.get('hospitalId')
 
                 cursor.execute("""
                     INSERT INTO blood_request_tbl
@@ -958,19 +982,10 @@ def manage_stock_raw(request):
 
 
 # =============================================================================
-# IMPROVEMENT 1: RECIPIENT REQUEST STATUS + LIVE DONOR INTEREST COUNT
+# RECIPIENT REQUEST STATUS + LIVE DONOR INTEREST COUNT
 # =============================================================================
 
 def get_recipient_requests(request):
-    """
-    GET /api/recipient/requests/?email=...
-
-    Returns all blood requests for the recipient enriched with:
-      - donorInterestCount  : live count from donor_interest_log
-      - isGlobal            : True when hospital_id is NULL
-
-    Powers the "Wait Anxiety" fix — recipient sees donor activity in real time.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse([], safe=False)
@@ -1009,7 +1024,7 @@ def get_recipient_requests(request):
                     ic_row = c2.fetchone()
                     interest_count = ic_row[0] if ic_row else 0
             except Exception:
-                pass  # table may not exist yet
+                pass
             results.append({
                 'requestId':          req_id,
                 'bloodGroup':         blood_group,
@@ -1029,16 +1044,10 @@ def get_recipient_requests(request):
 
 
 # =============================================================================
-# IMPROVEMENT 3: RECIPIENT BILLING & ONLINE PAYMENT
+# RECIPIENT BILLING & ONLINE PAYMENT
 # =============================================================================
 
 def get_recipient_bills(request):
-    """
-    GET /api/recipient/bills/?email=...
-
-    Returns invoices joined with payment status.
-    Returns [] gracefully if invoice tables do not yet exist.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse([], safe=False)
@@ -1091,13 +1100,6 @@ def get_recipient_bills(request):
 
 @csrf_exempt
 def mark_bill_paid(request):
-    """
-    POST /api/recipient/bills/pay/
-    Body: { billNo, email, paymentMode }
-
-    Records payment in payment_tbl.
-    Idempotent — returns 200 if the bill is already marked Paid.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1126,7 +1128,6 @@ def mark_bill_paid(request):
             if not amount_row:
                 return JsonResponse({'error': 'Invoice not found.'}, status=404)
             amount = float(amount_row[0]) if amount_row[0] else 0.0
-            # Idempotency — don't double-charge
             cursor.execute(
                 "SELECT 1 FROM payment_tbl WHERE bill_no = %s AND status = 'Paid'",
                 [bill_no]
