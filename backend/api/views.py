@@ -1329,12 +1329,12 @@ def hospital_events_list(request):
             cursor.execute("""
                 SELECT
                     e.event_id,
-                    e.title,
+                    e.event_title,
                     e.event_date,
                     e.start_time,
                     e.end_time,
                     e.location,
-                    e.total_seats,
+                    e.seats_available,
                     COUNT(a.appointment_id) AS registered_count
                 FROM event_tbl e
                 JOIN hospital_registration_tbl h ON e.hospital_id = h.hospital_id
@@ -1343,8 +1343,8 @@ def hospital_events_list(request):
                     ON a.event_id = e.event_id
                     AND a.status NOT IN ('Rejected', 'Canceled')
                 WHERE u.email = %s
-                GROUP BY e.event_id, e.title, e.event_date, e.start_time, e.end_time,
-                         e.location, e.total_seats
+                GROUP BY e.event_id, e.event_title, e.event_date, e.start_time, e.end_time,
+                         e.location, e.seats_available
                 ORDER BY e.event_date DESC
             """, [email])
             rows = cursor.fetchall()
@@ -1356,9 +1356,9 @@ def hospital_events_list(request):
             data.append({
                 'id':              event_id,
                 'title':           title,
-                'date':            event_date.strftime('%Y-%m-%d') if event_date else '',
-                'startTime':       start_time.strftime('%I:%M %p') if start_time else '',
-                'endTime':         end_time.strftime('%I:%M %p') if end_time else '',
+                'date':            event_date.strftime('%Y-%m-%d') if event_date and not isinstance(event_date, str) else (event_date or ''),
+                'startTime':       start_time if start_time else '',
+                'endTime':         end_time if end_time else '',
                 'location':        location or '',
                 'seats':           seats_left,
                 'registeredCount': reg_count or 0,
@@ -1406,7 +1406,7 @@ def hospital_events_create(request):
 
             cursor.execute("""
                 INSERT INTO event_tbl
-                    (hospital_id, title, event_date, start_time, end_time, location, total_seats, description)
+                    (hospital_id, event_title, event_date, start_time, end_time, location, seats_available, description)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, [hospital_id, title, date, start_time, end_time, location, seats, description])
 
