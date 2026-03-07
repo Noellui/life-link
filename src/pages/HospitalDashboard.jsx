@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 
 const HospitalDashboard = () => {
   // --- STATE: MODAL CONTROL ---
-  const [activeModal, setActiveModal] = useState(null); 
-  const [registrationSuccess, setRegistrationSuccess] = useState(null); 
+  const [activeModal, setActiveModal] = useState(null);
+  const [registrationSuccess, setRegistrationSuccess] = useState(null);
 
   // --- STATE: FORMS ---
   const [newPatient, setNewPatient] = useState({
@@ -20,15 +20,22 @@ const HospitalDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [stats, setStats] = useState({ totalUnits: 0, criticalAlerts: 0, pendingCount: 0 });
 
+  // --- STATE: DYNAMIC HOSPITAL NAME ---
+  const [hospitalName, setHospitalName] = useState("Loading Hospital...");
+
   // --- EFFECT: LOAD ALL DATA (Fetched from Backend) ---
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        // 1. Fetch live stats and inventory from backend
-        // Note: Using hospital_id=9001 as per your new logic
+        // 1. Fetch live stats, inventory, AND hospital name from backend
         const statsResponse = await fetch('http://localhost:8000/api/admin/stats/?hospital_id=9001');
         if (statsResponse.ok) {
           const data = await statsResponse.json();
+
+          // Set the dynamic hospital name from the database
+          if (data.hospital_name) {
+            setHospitalName(data.hospital_name);
+          }
 
           const formattedInventory = data.inventory.map(item => ({
             type: item.type,
@@ -51,17 +58,18 @@ const HospitalDashboard = () => {
           const reqData = await reqResponse.json();
           const formattedRequests = reqData.map(req => ({
             ...req,
-            type: req.type || "Online Request" // Fallback if type isn't provided
+            type: req.type || "Online Request"
           }));
           setRequests(formattedRequests);
         }
       } catch (error) {
         console.error("Error connecting to backend:", error);
+        setHospitalName("Hospital Dashboard");
       }
     };
 
     fetchDashboardData();
-  }, [activeModal]); // Re-run when modals close to refresh data
+  }, [activeModal]);
 
   // --- HANDLERS ---
   const handlePatientChange = (e) => setNewPatient({ ...newPatient, [e.target.name]: e.target.value });
@@ -74,12 +82,11 @@ const HospitalDashboard = () => {
     return pass;
   };
 
-  // 1. SUBMIT PATIENT (Registers User AND Creates Blood Request)
+  // 1. SUBMIT PATIENT
   const handlePatientSubmit = async (e) => {
     e.preventDefault();
     const tempPassword = generatePassword();
 
-    // STEP 1: Register the Patient as a User
     const registerPayload = {
       fullName: newPatient.name,
       email: newPatient.email,
@@ -104,7 +111,6 @@ const HospitalDashboard = () => {
       const regData = await regRes.json();
       const newUserId = regData.userId;
 
-      // STEP 2: Create the Blood Request using the new User ID
       const requestPayload = {
         userId: newUserId,
         bloodGroup: newPatient.bloodType,
@@ -123,7 +129,6 @@ const HospitalDashboard = () => {
       if (reqRes.ok) {
         const reqResult = await reqRes.json();
 
-        // Local update for immediate UI feel
         const newRequest = {
           id: reqResult.requestId,
           patientName: newPatient.name,
@@ -137,12 +142,12 @@ const HospitalDashboard = () => {
 
         setRequests([newRequest, ...requests]);
 
-        setRegistrationSuccess({ 
-          type: 'Patient', 
-          id: `REQ-${reqResult.requestId}`, 
-          name: newPatient.name, 
-          email: newPatient.email, 
-          password: tempPassword 
+        setRegistrationSuccess({
+          type: 'Patient',
+          id: `REQ-${reqResult.requestId}`,
+          name: newPatient.name,
+          email: newPatient.email,
+          password: tempPassword
         });
       } else {
         alert("Patient registered, but failed to create blood request.");
@@ -153,7 +158,7 @@ const HospitalDashboard = () => {
     }
   };
 
-  // 2. SUBMIT DONOR (Posts to Backend Registration)
+  // 2. SUBMIT DONOR
   const handleDonorSubmit = async (e) => {
     e.preventDefault();
     const tempPassword = generatePassword();
@@ -167,7 +172,7 @@ const HospitalDashboard = () => {
       bloodGroup: newDonor.bloodGroup,
       city: newDonor.city,
       gender: newDonor.gender,
-      dob: '2000-01-01', // Default as per new logic
+      dob: '2000-01-01',
       weight: 65
     };
 
@@ -179,12 +184,12 @@ const HospitalDashboard = () => {
       });
 
       if (response.ok) {
-        setRegistrationSuccess({ 
-          type: 'Donor', 
-          id: 'Pending Verification', 
-          name: newDonor.name, 
-          email: newDonor.email, 
-          password: tempPassword 
+        setRegistrationSuccess({
+          type: 'Donor',
+          id: 'Pending Verification',
+          name: newDonor.name,
+          email: newDonor.email,
+          password: tempPassword
         });
       } else {
         const err = await response.json();
@@ -204,23 +209,24 @@ const HospitalDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12 relative">
-      
+
       {/* 1. Header Section */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">City General Hospital 🏥</h1>
+            {/* DYNAMIC hospital name from database */}
+            <h1 className="text-2xl font-bold text-gray-900">{hospitalName} 🏥</h1>
             <p className="text-gray-500 text-sm mt-1">Dashboard & Inventory Management</p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button 
+            <button
               onClick={() => setActiveModal('patient')}
               className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition shadow-sm flex items-center gap-2"
             >
               <span>👤</span> New Patient
             </button>
 
-            <button 
+            <button
               onClick={() => setActiveModal('donor')}
               className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition shadow-sm flex items-center gap-2"
             >
@@ -231,7 +237,7 @@ const HospitalDashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
-        
+
         {/* 2. Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
@@ -259,7 +265,7 @@ const HospitalDashboard = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+
           {/* 3. Inventory Overview */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -267,20 +273,27 @@ const HospitalDashboard = () => {
               <span className="text-xs text-gray-500">Synced with Database</span>
             </div>
             <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-              {inventory.map((item) => (
-                <div key={item.type} className={`relative p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
-                  item.status === 'Critical' ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white'
-                }`}>
-                  <h4 className="text-2xl font-black text-gray-800 mb-1">{item.type}</h4>
-                  <p className={`text-sm font-medium mb-2 ${
-                    item.status === 'Stable' || item.status === 'Good' ? 'text-green-600' : 'text-red-600'
-                  }`}>{item.status}</p>
-                  <div className="bg-gray-100 rounded-lg px-3 py-1">
-                    <span className="font-bold text-gray-800 text-lg">{item.units}</span>
-                    <span className="text-xs text-gray-500 ml-1">Units</span>
-                  </div>
+              {inventory.length === 0 ? (
+                <div className="col-span-4 text-center py-8 text-gray-400">
+                  <p className="text-lg">No inventory data found.</p>
+                  <p className="text-sm mt-1">Make sure blood types are inserted in the database and restart Django.</p>
                 </div>
-              ))}
+              ) : (
+                inventory.map((item) => (
+                  <div key={item.type} className={`relative p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${
+                    item.status === 'Critical' ? 'border-red-100 bg-red-50' : 'border-gray-100 bg-white'
+                  }`}>
+                    <h4 className="text-2xl font-black text-gray-800 mb-1">{item.type}</h4>
+                    <p className={`text-sm font-medium mb-2 ${
+                      item.status === 'Stable' || item.status === 'Good' ? 'text-green-600' : 'text-red-600'
+                    }`}>{item.status}</p>
+                    <div className="bg-gray-100 rounded-lg px-3 py-1">
+                      <span className="font-bold text-gray-800 text-lg">{item.units}</span>
+                      <span className="text-xs text-gray-500 ml-1">Units</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
             <div className="px-6 pb-4">
               <Link to="/manage-stock" className="text-sm text-blue-600 font-medium hover:underline">Manage Inventory Details →</Link>
@@ -305,23 +318,23 @@ const HospitalDashboard = () => {
                     }`}>{req.bloodGroup}</span>
                   </div>
                   <div className="flex justify-between items-center mt-3">
-                     <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                       req.urgency === 'Critical' ? 'bg-red-100 text-red-700' : 
-                       req.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
-                     }`}>{req.urgency}</span>
-                     
-                     <span className={`text-xs px-2 py-0.5 rounded border ${
-                       req.type === 'Internal Admission' 
-                         ? 'bg-gray-100 text-gray-600 border-gray-200' 
-                         : 'bg-purple-50 text-purple-700 border-purple-200'
-                     }`}>
-                       {req.type === 'Internal Admission' ? 'Internal' : 'Online'}
-                     </span>
+                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                      req.urgency === 'Critical' ? 'bg-red-100 text-red-700' :
+                      req.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                    }`}>{req.urgency}</span>
+
+                    <span className={`text-xs px-2 py-0.5 rounded border ${
+                      req.type === 'Internal Admission'
+                        ? 'bg-gray-100 text-gray-600 border-gray-200'
+                        : 'bg-purple-50 text-purple-700 border-purple-200'
+                    }`}>
+                      {req.type === 'Internal Admission' ? 'Internal' : 'Online'}
+                    </span>
                   </div>
                 </div>
               ))}
               <div className="p-4 text-center">
-                 <Link to="/patient-requests" className="text-sm text-blue-600 font-medium hover:underline">Process All Requests →</Link>
+                <Link to="/patient-requests" className="text-sm text-blue-600 font-medium hover:underline">Process All Requests →</Link>
               </div>
             </div>
           </div>
@@ -332,19 +345,19 @@ const HospitalDashboard = () => {
       {activeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up">
-            
+
             <div className={`${activeModal === 'patient' ? 'bg-blue-600' : 'bg-green-600'} px-6 py-4 flex justify-between items-center text-white`}>
               <h3 className="text-lg font-bold">
-                {registrationSuccess 
-                  ? `${registrationSuccess.type} Registered ✅` 
+                {registrationSuccess
+                  ? `${registrationSuccess.type} Registered ✅`
                   : activeModal === 'patient' ? "Register New Patient" : "Register New Donor"}
               </h3>
               <button onClick={closeAndReset} className="text-2xl leading-none hover:text-gray-200">&times;</button>
             </div>
-            
+
             {!registrationSuccess ? (
               <div className="p-6">
-                
+
                 {/* PATIENT FORM */}
                 {activeModal === 'patient' && (
                   <form onSubmit={handlePatientSubmit} className="space-y-4">
@@ -371,8 +384,8 @@ const HospitalDashboard = () => {
                         <input required type="number" min="1" max="10" name="units" value={newPatient.units} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" />
                       </div>
                       <div>
-                         <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
-                         <input required type="number" name="age" value={newPatient.age} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" />
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
+                        <input required type="number" name="age" value={newPatient.age} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Urgency</label>
@@ -435,7 +448,7 @@ const HospitalDashboard = () => {
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto text-3xl ${
                   registrationSuccess.type === 'Patient' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
                 }`}>✓</div>
-                
+
                 <div>
                   <h4 className="text-xl font-bold text-gray-900">Account Created Successfully</h4>
                   <p className="text-gray-500 text-sm mt-2">

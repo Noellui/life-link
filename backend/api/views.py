@@ -719,70 +719,155 @@ def get_certificate_data(request, appointment_id):
 
 # =============================================================================
 # ADMIN DASHBOARD & REPORTS
-# ── Now accepts ?hospital_id=<id> to scope stats to a single hospital ─────────
+# ── Now accepts ?hospital_id=<id> to scope stats to a single hospital
+# ── Also returns the real hospital_name when hospital_id is provided
 # =============================================================================
 
 def admin_dashboard_stats(request):
     try:
-        # 1. Check if a specific hospital is requesting its own stats
-        hospital_id = request.GET.get('hospital_id')
+        # 1. Get hospital_id and cast to int to avoid string vs int mismatch
+        hospital_id_raw = request.GET.get('hospital_id')
+        hospital_id = int(hospital_id_raw) if hospital_id_raw else None
 
-        # 2. Base querysets
-        storage_qs = BloodStorageTbl.objects.all()
-        request_qs = BloodRequestTbl.objects.all()
-        appt_qs    = AppointmentTbl.objects.all()
-
-        # 3. Scope to a single hospital when hospital_id is supplied
+        # 2. Fetch the actual hospital name using raw SQL (most reliable)
+        hospital_name = "Central Admin Dashboard"
         if hospital_id:
-            storage_qs = storage_qs.filter(hospital_id=hospital_id)
-            request_qs = request_qs.filter(hospital_id=hospital_id)
-            appt_qs    = appt_qs.filter(hospital_id=hospital_id)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT hospital_name FROM hospital_registration_tbl WHERE hospital_id = %s",
+                    [hospital_id]
+                )
+                row = cursor.fetchone()
+                if row:
+                    hospital_name = row[0]
 
-        # 4. Global user counts are always global; storage/requests are scoped
-        stats = {
-            'donors':           UserRegistrationTbl.objects.filter(user_role='Donor').count(),
-            'hospitals':        UserRegistrationTbl.objects.filter(user_role='Hospital').count(),
-            'recipients':       UserRegistrationTbl.objects.filter(user_role='Recipient').count(),
-            'total_units':      storage_qs.aggregate(total=Sum('quantity'))['total'] or 0,
-            'pending_requests': request_qs.filter(status='Pending').count(),
-        }
+        # 3. All queries use raw SQL directly against DB columns
+        # blood_storage_tbl HAS a hospital_id column in the real DB (just missing from Django model)
+        with connection.cursor() as cursor:
 
-        # 5. Inventory per blood type (scoped)
+            # --- Global user counts ---
+            cursor.execute("SELECT COUNT(*) FROM user_registration_tbl WHERE user_role = 'Donor'")
+            donor_count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM user_registration_tbl WHERE user_role = 'Hospital'")
+            hospital_count = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM user_registration_tbl WHERE user_role = 'Recipient'")
+            recipient_count = cursor.fetchone()[0]
+
+            # --- Total units in storage (direct hospital_id filter) ---
+            if hospital_id:
+                cursor.execute(
+                    "SELECT COALESCE(SUM(quantity), 0) FROM blood_storage_tbl WHERE hospital_id = %s AND status = 'Available'",
+                    [hospital_id]
+                )
+            else:
+                cursor.execute("SELECT COALESCE(SUM(quantity), 0) FROM blood_storage_tbl WHERE status = 'Available'")
+            total_units = cursor.fetchone()[0]
+
+            # --- Pending requests ---
+            if hospital_id:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM blood_request_tbl WHERE status = 'Pending' AND hospital_id = %s",
+                    [hospital_id]
+                )
+            else:
+                cursor.execute("SELECT COUNT(*) FROM blood_request_tbl WHERE status = 'Pending'")
+            pending_requests = cursor.fetchone()[0]
+
+            # --- Inventory per blood type: LEFT JOIN so all 8 types always appear ---
+            if hospital_id:
+                cursor.execute("""
+                    SELECT
+                        bt.blood_type,
+                        COALESCE(SUM(bs.quantity), 0) AS total_qty
+                    FROM blood_type_tbl bt
+                    LEFT JOIN blood_storage_tbl bs
+                        ON bt.blood_id = bs.blood_id
+                        AND bs.hospital_id = %s
+                        AND bs.status = 'Available'
+                    GROUP BY bt.blood_id, bt.blood_type
+                    ORDER BY bt.blood_id
+                """, [hospital_id])
+            else:
+                cursor.execute("""
+                    SELECT
+                        bt.blood_type,
+                        COALESCE(SUM(bs.quantity), 0) AS total_qty
+                    FROM blood_type_tbl bt
+                    LEFT JOIN blood_storage_tbl bs
+                        ON bt.blood_id = bs.blood_id
+                        AND bs.status = 'Available'
+                    GROUP BY bt.blood_id, bt.blood_type
+                    ORDER BY bt.blood_id
+                """)
+            inventory_rows = cursor.fetchall()
+
+            # --- Monthly activity ---
+            activity = []
+            for i in range(3):
+                d = datetime.date.today() - datetime.timedelta(days=i * 30)
+                if hospital_id:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM appointment_tbl "
+                        "WHERE status = 'Fulfilled' AND MONTH(appointment_date) = %s AND hospital_id = %s",
+                        [d.month, hospital_id]
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM appointment_tbl "
+                        "WHERE status = 'Fulfilled' AND MONTH(appointment_date) = %s",
+                        [d.month]
+                    )
+                don = cursor.fetchone()[0]
+
+                if hospital_id:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM blood_request_tbl "
+                        "WHERE MONTH(request_date) = %s AND hospital_id = %s",
+                        [d.month, hospital_id]
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM blood_request_tbl WHERE MONTH(request_date) = %s",
+                        [d.month]
+                    )
+                req = cursor.fetchone()[0]
+
+                activity.append({
+                    'month':     d.strftime('%B'),
+                    'donations': don,
+                    'requests':  req,
+                    'outcome':   f"{don - req:+}",
+                })
+
+        # 4. Build inventory list from raw SQL results
         inventory = []
-        for bt in BloodTypeTbl.objects.all():
-            count = (
-                storage_qs
-                .filter(blood_id=bt.blood_id)
-                .aggregate(total=Sum('quantity'))['total'] or 0
-            )
+        for blood_type, count in inventory_rows:
             inventory.append({
-                'type':     bt.blood_type,
-                'count':    count,
+                'type':     blood_type,
+                'count':    int(count),
                 'capacity': 100,
                 'status':   'Critical' if count == 0 else ('Low' if count < 10 else 'Stable'),
             })
 
-        # 6. Monthly activity (scoped)
-        activity = []
-        for i in range(3):
-            d   = datetime.date.today() - datetime.timedelta(days=i * 30)
-            don = appt_qs.filter(
-                status='Fulfilled', appointment_date__month=d.month
-            ).count()
-            req = request_qs.filter(request_date__month=d.month).count()
-            activity.append({
-                'month':     d.strftime('%B'),
-                'donations': don,
-                'requests':  req,
-                'outcome':   f"{don - req:+}",
-            })
+        stats = {
+            'donors':           donor_count,
+            'hospitals':        hospital_count,
+            'recipients':       recipient_count,
+            'total_units':      int(total_units),
+            'pending_requests': pending_requests,
+        }
 
         return JsonResponse({
+            'hospital_name':    hospital_name,
             'stats':            stats,
             'inventory':        inventory,
             'monthly_activity': activity,
         })
     except Exception as e:
+        import traceback
+        print("admin_dashboard_stats ERROR:", traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
 
