@@ -25,7 +25,7 @@ import MyRequests from './pages/MyRequests';
 import HospitalEvents from './pages/HospitalEvents';
 import HospitalAppointments from './pages/HospitalAppointments';
 import MyBills from './pages/MyBills';
-import RecipientProfile from './pages/RecipientProfile';import RecipientProfile from './pages/RecipientProfile';
+import RecipientProfile from './pages/RecipientProfile';
 
 function App() {
   // --- AUTH STATE MANAGEMENT ---

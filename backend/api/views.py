@@ -1741,3 +1741,32 @@ def renew_hospital_subscription(request):
         return JsonResponse({'message': 'Subscription renewed for 30 days.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+def get_hospital_profile(request):
+    """
+    Fetches the hospital's profile details based on the logged-in user's email.
+    """
+    email = request.GET.get('email')
+    if not email:
+        return JsonResponse({'error': 'email required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT h.hospital_name, h.license_no, h.address, h.city
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s
+            """, [email])
+            row = cursor.fetchone()
+            
+        if not row:
+            return JsonResponse({'error': 'Hospital profile not found'}, status=404)
+            
+        return JsonResponse({
+            'hospitalName': row[0],
+            'licenseNo': row[1] or 'N/A',
+            'address': row[2],
+            'city': row[3]
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
