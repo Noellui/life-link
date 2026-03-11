@@ -26,6 +26,7 @@ import HospitalEvents from './pages/HospitalEvents';
 import HospitalAppointments from './pages/HospitalAppointments';
 import MyBills from './pages/MyBills';
 import RecipientProfile from './pages/RecipientProfile';
+import HospitalProfile from './pages/HospitalProfile';
 
 function App() {
   // --- AUTH STATE MANAGEMENT ---
@@ -94,6 +95,7 @@ function App() {
           <Route path="/manage-stock" element={<StockManagement />} />
           <Route path="/hospital/events" element={<HospitalEvents />} /> 
           <Route path="/hospital/appointments" element={<HospitalAppointments />} /> 
+          <Route path="/hospital-profile" element={<HospitalProfile />} />
           
           {/* --- FALLBACK --- */}
           <Route path="*" element={<Navigate to="/" replace />} />

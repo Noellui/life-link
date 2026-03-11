@@ -336,6 +336,12 @@ const HospitalDashboard = () => {
               <div className="p-4 text-center">
                 <Link to="/patient-requests" className="text-sm text-blue-600 font-medium hover:underline">Process All Requests →</Link>
               </div>
+              <Link 
+        to="/hospital-profile" 
+        className="flex items-center justify-center gap-2 w-full py-2.5 bg-gray-900 text-white text-sm font-bold rounded-lg hover:bg-black transition shadow-md"
+      >
+        <span>⚙️</span> Update Profile
+      </Link>
             </div>
           </div>
         </div>
