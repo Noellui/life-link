@@ -1633,3 +1633,111 @@ def update_request_status(request, request_id):
         return JsonResponse({'message': f'Request marked as {new_status}.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def confirm_transfusion(request):
+    """
+    Updates appointment to 'Transfusion Done', generates an invoice,
+    and sets the blood request to 'Awaiting Payment'.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+        appointment_id = data.get('appointmentId')
+        request_id = data.get('requestId')
+
+        if not appointment_id or not request_id:
+            return JsonResponse({'error': 'appointmentId and requestId are required'}, status=400)
+
+        with connection.cursor() as cursor:
+            # 1. Update Appointment Status
+            cursor.execute(
+                "UPDATE appointment_tbl SET status = 'Transfusion Done' WHERE appointment_id = %s",
+                [appointment_id]
+            )
+
+            # 2. Fetch data for Invoice (Donor, Recipient, Blood ID)
+            cursor.execute("""
+                SELECT a.donor_id, r.recipient_id, d.blood_id 
+                FROM appointment_tbl a
+                JOIN donor_tbl d ON a.donor_id = d.donor_id
+                CROSS JOIN blood_request_tbl br
+                JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
+                WHERE a.appointment_id = %s AND br.request_id = %s
+            """, [appointment_id, request_id])
+            
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Linked records not found'}, status=404)
+            
+            donor_id, recipient_id, blood_id = row
+
+            # 3. Create Invoice Record
+            cursor.execute("""
+                INSERT INTO invoice_no_tbl 
+                (appointment_id, donor_id, blood_id, blood_received_by, quantity, rate)
+                SELECT %s, %s, %s, full_name, 1, 500.0
+                FROM recipient_tbl WHERE recipient_id = %s
+            """, [appointment_id, donor_id, blood_id, recipient_id])
+
+            # 4. Update Blood Request Status
+            cursor.execute(
+                "UPDATE blood_request_tbl SET status = 'Awaiting Payment' WHERE request_id = %s",
+                [request_id]
+            )
+
+        return JsonResponse({'message': 'Transfusion confirmed and invoice generated.'}, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    
+def get_hospital_subscription(request):
+    email = request.GET.get('email')
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT s.end_date, s.status, h.hospital_name
+                FROM hospital_subscription_tbl s
+                JOIN hospital_registration_tbl h ON s.hospital_id = h.hospital_id
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s
+            """, [email])
+            row = cursor.fetchone()
+            
+        if not row:
+            return JsonResponse({'error': 'Subscription not found'}, status=404)
+            
+        return JsonResponse({
+            'endDate': row[0].strftime('%Y-%m-%d') if row[0] else 'N/A',
+            'status': row[1],
+            'hospitalName': row[2]
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def renew_hospital_subscription(request):
+    """Adds 30 days to the existing subscription end date."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+
+        with connection.cursor() as cursor:
+            # Update by adding 30 days to the current end_date
+            cursor.execute("""
+                UPDATE hospital_subscription_tbl s
+                JOIN hospital_registration_tbl h ON s.hospital_id = h.hospital_id
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                SET s.end_date = DATE_ADD(GREATEST(s.end_date, NOW()), INTERVAL 30 DAY),
+                    s.status = 'Active'
+                WHERE u.email = %s
+            """, [email])
+            
+            if cursor.rowcount == 0:
+                return JsonResponse({'error': 'Hospital subscription not found'}, status=404)
+
+        return JsonResponse({'message': 'Subscription renewed for 30 days.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

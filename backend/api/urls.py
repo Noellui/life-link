@@ -44,6 +44,14 @@ urlpatterns = [
     path('hospital/requests/', views.hospital_requests_list, name='hospital_requests_list'),
     path('requests/<int:request_id>/update-status/', views.update_request_status, name='update_request_status'),
 
+     # Transfusion
+    path('hospital/appointments/transfusion/', views.confirm_transfusion, name='confirm_transfusion'),
+
+
+    # Subscription
+    path('hospital/subscription/', views.get_hospital_subscription, name='get_hospital_subscription'),
+    path('hospital/subscription/renew/', views.renew_hospital_subscription, name='renew_hospital_subscription'),
+
     # --- RAW SQL ENDPOINTS ---
     path('requests/create-raw/', views.create_blood_request_raw, name='create_blood_request_raw'),
     path('profile/update-raw/', views.update_profile_raw, name='update_profile_raw'),
@@ -54,4 +62,11 @@ urlpatterns = [
     path('recipient/requests/', views.get_recipient_requests, name='recipient_requests'),
     path('recipient/bills/', views.get_recipient_bills, name='recipient_bills'),
     path('recipient/bills/pay/', views.mark_bill_paid, name='mark_bill_paid'),
+
+    # 1. Hospital Profile Route
+    path('api/hospital/profile/', views.get_hospital_profile, name='hospital_profile'),
+    
+    # 2. Make sure you also have the subscription routes from earlier!
+    path('api/hospital/subscription/', views.get_hospital_subscription, name='hospital_subscription'),
+    path('api/hospital/subscription/renew/', views.renew_hospital_subscription, name='hospital_subscription_renew'),
 ]

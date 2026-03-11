@@ -5,10 +5,20 @@ const BASE_URL = 'http://127.0.0.1:8000';
 
 const API = {
   bills: (email) => `${BASE_URL}/api/recipient/bills/?email=${encodeURIComponent(email)}`,
-  pay: `${BASE_URL}/api/recipient/bills/pay/`,
+  pay: `${BASE_URL}/api/mark-bill-paid/`,
 };
 
 const fmt = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
+
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
 
 export default function MyBills() {
   const navigate = useNavigate();
@@ -18,17 +28,11 @@ export default function MyBills() {
   const [bills, setBills] = useState([]);
   const [billsLoading, setBillsLoading] = useState(true);
 
-  // Payment modal state
+  // Success modal state
   const [payModal, setPayModal] = useState(false);
-  const [payingBill, setPayingBill] = useState(null);
-  const [payMode, setPayMode] = useState('UPI');
-  const [isPaying, setIsPaying] = useState(false);
-  const [payDone, setPayDone] = useState(false);
-  const [payError, setPayError] = useState('');
 
   // ── Bootstrap User ─────────────────────────────────────────────────────────
   useEffect(() => {
-    // Check universal user_data first, fallback to lifeLinkUser
     const stored = JSON.parse(localStorage.getItem('user_data') || localStorage.getItem('lifeLinkUser') || 'null');
     if (!stored) {
       navigate('/login');
@@ -46,80 +50,85 @@ export default function MyBills() {
   useEffect(() => {
     if (!user.email) return;
 
-    // 1. Define the async function INSIDE the useEffect
     const fetchBills = async () => {
       try {
         const res = await fetch(API.bills(user.email));
         const data = await res.json();
-        // ONLY use the data from the database, even if it is empty
         setBills(Array.isArray(data) ? data : []);
       } catch (error) {
-        // If the server crashes, show an empty list
         console.error("Failed to fetch bills:", error);
         setBills([]);
       } finally {
-        // MUST set loading to false so the empty state can render
         setBillsLoading(false);
       }
     };
 
-    // 2. Call the function
     fetchBills();
-
   }, [user.email]);
 
   // ── Payment Handlers ───────────────────────────────────────────────────────
-  const openPayModal = (bill) => {
-    setPayingBill(bill);
-    setPayMode('UPI');
-    setPayDone(false);
-    setPayError('');
-    setPayModal(true);
-  };
-
-  const submitPayment = async () => {
-    if (!payingBill) return;
-    setIsPaying(true);
-    setPayError('');
-
-    // Optimistic UI — mark paid immediately
-    setBills(prev => prev.map(b =>
-      b.billNo === payingBill.billNo
-        ? { ...b, paymentStatus: 'Paid', paymentDate: new Date().toISOString().slice(0, 10), paymentId: `PAY-${Math.floor(Math.random()*1000000)}` }
-        : b
-    ));
-
-    // Force Navbar badge to update
-    window.dispatchEvent(new Event('storage'));
-
-    try {
-      const res = await fetch(API.pay, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          billNo: payingBill.billNo,
-          email: user.email,
-          paymentMode: payMode,
-        }),
-      });
-      if (!res.ok) throw new Error('Payment request failed.');
-      setPayDone(true);
-    } catch {
-      // Keep optimistic UI — backend sync failed but we show success for UX demo
-      setPayDone(true);
-    } finally {
-      setIsPaying(false);
+  const handlePayment = async (bill) => {
+    const isLoaded = await loadRazorpayScript();
+    
+    if (!isLoaded) {
+      alert('Razorpay SDK failed to load. Please check your connection.');
+      return;
     }
+
+    // Include 18% GST in the final amount sent to Razorpay (Razorpay expects paise)
+    const amountWithGST = Math.round(bill.amount * 1.18 * 100);
+
+    const options = {
+      key: 'rzp_test_YOUR_KEY_HERE', // Replace with your actual Razorpay Key ID
+      amount: amountWithGST,
+      currency: 'INR',
+      name: 'Whisper Wire',
+      description: `Payment for Blood Unit (Bill #${bill.billNo})`,
+      handler: async function (response) {
+        // Optimistic UI — mark paid immediately
+        setBills(prev => prev.map(b =>
+          b.billNo === bill.billNo
+            ? { ...b, paymentStatus: 'Paid', paymentDate: new Date().toISOString().slice(0, 10), paymentId: response.razorpay_payment_id }
+            : b
+        ));
+
+        // Force Navbar badge to update
+        window.dispatchEvent(new Event('storage'));
+        setPayModal(true); // Show success modal
+
+        try {
+          await fetch(API.pay, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              billNo: bill.billNo,
+              email: user.email,
+              paymentMode: 'Online',
+              razorpayPaymentId: response.razorpay_payment_id
+            }),
+          });
+        } catch (err) {
+          console.error('Payment confirmation error on backend:', err);
+        }
+      },
+      prefill: {
+        email: user.email,
+        contact: bill.mobileNo !== 'N/A' ? bill.mobileNo : ''
+      },
+      theme: {
+        color: '#DC2626', // Whisper Wire red theme
+      },
+    };
+
+    const paymentObject = new window.Razorpay(options);
+    paymentObject.open();
   };
 
   const closePayModal = () => {
     setPayModal(false);
-    setPayingBill(null);
-    setPayDone(false);
   };
 
   // ── Derived Data ───────────────────────────────────────────────────────────
-  const unpaidCount = bills.filter(b => b.paymentStatus === 'Unpaid').length;
   const unpaidTotal = bills
     .filter(b => b.paymentStatus === 'Unpaid')
     .reduce((s, b) => s + b.amount * 1.18, 0);
@@ -164,7 +173,7 @@ export default function MyBills() {
                 <h3 style={styles.sectionTitle}>Outstanding Bills</h3>
                 <div style={styles.billsGrid}>
                   {bills.filter(b => b.paymentStatus === 'Unpaid').map(bill => (
-                    <BillCard key={bill.billNo} bill={bill} onPay={() => openPayModal(bill)} />
+                    <BillCard key={bill.billNo} bill={bill} onPay={() => handlePayment(bill)} />
                   ))}
                 </div>
               </section>
@@ -197,69 +206,20 @@ export default function MyBills() {
         )}
       </main>
 
-      {/* ══════════════════ PAYMENT MODAL ══════════════════ */}
-      {payModal && payingBill && (
+      {/* ══════════════════ SUCCESS MODAL ══════════════════ */}
+      {payModal && (
         <div style={styles.overlay} onClick={(e) => e.target === e.currentTarget && closePayModal()}>
           <div style={styles.modal}>
-            <div style={styles.modalHeader}>
-              <span style={{ fontWeight: 700, fontSize: 16 }}>Secure Payment</span>
-              <button onClick={closePayModal} style={styles.modalClose}>✕</button>
+            <div style={styles.paySuccess}>
+              <div style={styles.successIcon}>✓</div>
+              <h4 style={{ fontSize: 20, fontWeight: 800, color: '#111827', marginBottom: 4 }}>
+                Payment Successful!
+              </h4>
+              <p style={{ color: '#6B7280', fontSize: 14, marginBottom: 24 }}>
+                Your payment has been processed and recorded successfully.
+              </p>
+              <button onClick={closePayModal} style={styles.closeBtn}>Done</button>
             </div>
-
-            {!payDone ? (
-              <div style={{ padding: 24 }}>
-                <div style={styles.orderBox}>
-                  <p style={styles.orderLabel}>Order Summary</p>
-                  <div style={styles.orderRow}>
-                    <span>Blood Units ({payingBill.quantity} × {fmt(payingBill.rate)})</span>
-                    <span style={{ fontWeight: 700 }}>{fmt(payingBill.quantity * payingBill.rate)}</span>
-                  </div>
-                  <div style={styles.orderRow}>
-                    <span>GST (18%)</span>
-                    <span style={{ fontWeight: 700 }}>{fmt((payingBill.quantity * payingBill.rate * 0.18).toFixed(0))}</span>
-                  </div>
-                  <div style={styles.orderTotal}>
-                    <span>Total</span>
-                    <span>{fmt((payingBill.quantity * payingBill.rate * 1.18).toFixed(0))}</span>
-                  </div>
-                </div>
-
-                <p style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', marginBottom: 10 }}>
-                  Payment Method
-                </p>
-                <div style={styles.modeGrid}>
-                  {['UPI', 'Card', 'Net Banking', 'Wallet'].map(m => (
-                    <button
-                      key={m}
-                      onClick={() => setPayMode(m)}
-                      style={{
-                        ...styles.modeBtn,
-                        ...(payMode === m ? styles.modeBtnActive : {}),
-                      }}
-                    >
-                      {m === 'UPI' ? '⚡' : m === 'Card' ? '💳' : m === 'Net Banking' ? '🏦' : '👜'} {m}
-                    </button>
-                  ))}
-                </div>
-
-                {payError && <p style={{ color: '#EF4444', fontSize: 13, marginTop: 8 }}>{payError}</p>}
-
-                <button onClick={submitPayment} disabled={isPaying} style={{ ...styles.payBtn, opacity: isPaying ? 0.7 : 1 }}>
-                  {isPaying ? 'Processing…' : `Pay ${fmt((payingBill.quantity * payingBill.rate * 1.18).toFixed(0))}`}
-                </button>
-              </div>
-            ) : (
-              <div style={styles.paySuccess}>
-                <div style={styles.successIcon}>✓</div>
-                <h4 style={{ fontSize: 20, fontWeight: 800, color: '#111827', marginBottom: 4 }}>
-                  Payment Successful!
-                </h4>
-                <p style={{ color: '#6B7280', fontSize: 14, marginBottom: 24 }}>
-                  Your payment has been recorded successfully.
-                </p>
-                <button onClick={closePayModal} style={styles.closeBtn}>Done</button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -352,16 +312,6 @@ const styles = {
   payNowBtn: { marginTop: 14, width: '100%', padding: '10px 0', background: '#DC2626', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', boxShadow: '0 2px 8px rgba(220,38,38,0.28)', transition: 'background 0.2s' },
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16, backdropFilter: 'blur(4px)' },
   modal: { background: '#fff', borderRadius: 18, width: '100%', maxWidth: 440, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' },
-  modalHeader: { background: '#111827', color: '#fff', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  modalClose: { background: 'none', border: 'none', color: '#9CA3AF', fontSize: 18, cursor: 'pointer', lineHeight: 1 },
-  orderBox: { background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 12, padding: 16, marginBottom: 20 },
-  orderLabel: { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#6B7280', letterSpacing: '0.06em', marginBottom: 10 },
-  orderRow: { display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#374151', marginBottom: 6 },
-  orderTotal: { display: 'flex', justifyContent: 'space-between', fontSize: 18, fontWeight: 800, color: '#111827', borderTop: '1px solid #E5E7EB', paddingTop: 10, marginTop: 6 },
-  modeGrid: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 20 },
-  modeBtn: { padding: '10px 4px', border: '2px solid #E5E7EB', borderRadius: 10, background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', textAlign: 'center' },
-  modeBtnActive: { borderColor: '#DC2626', background: '#FEF2F2', color: '#DC2626' },
-  payBtn: { width: '100%', padding: '14px 0', background: '#16A34A', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 800, fontSize: 16, cursor: 'pointer', boxShadow: '0 4px 12px rgba(22,163,74,0.35)', transition: 'opacity 0.2s' },
   paySuccess: { padding: '40px 24px', textAlign: 'center' },
   successIcon: { width: 64, height: 64, borderRadius: '50%', background: '#ECFDF5', color: '#10B981', fontSize: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontWeight: 800 },
   closeBtn: { width: '100%', padding: '13px 0', background: '#111827', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: 'pointer' },

@@ -7,12 +7,55 @@ const HospitalAppointments = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // --- SUBSCRIPTION STATE ---
+  const [subscription, setSubscription] = useState({ status: 'Active', endDate: '' });
+  const [subLoading, setSubLoading] = useState(true);
+
   // --- GET LOGGED-IN HOSPITAL USER ---
   const getHospitalEmail = () => {
     const stored =
       JSON.parse(localStorage.getItem('user_data') || 'null') ||
       JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
     return stored?.email || '';
+  };
+
+  // --- FETCH SUBSCRIPTION STATUS ---
+  const fetchSubscription = useCallback(async () => {
+    const email = getHospitalEmail();
+    if (!email) return;
+
+    try {
+      setSubLoading(true);
+      const res = await fetch(`${BASE_URL}/api/hospital/subscription/?email=${encodeURIComponent(email)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscription(data);
+      }
+    } catch (err) {
+      console.error('Subscription check failed:', err);
+    } finally {
+      setSubLoading(false);
+    }
+  }, []);
+
+  // --- RENEW SUBSCRIPTION ---
+  const handleRenew = async () => {
+    const email = getHospitalEmail();
+    try {
+      const res = await fetch(`${BASE_URL}/api/hospital/subscription/renew/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        alert('✅ Subscription Renewed successfully!');
+        fetchSubscription(); // Refresh status
+      } else {
+        throw new Error('Renewal failed');
+      }
+    } catch (err) {
+      alert('Renewal failed. Please try again.');
+    }
   };
 
   // --- FETCH APPOINTMENTS FROM BACKEND ---
@@ -44,10 +87,11 @@ const HospitalAppointments = () => {
   }, []);
 
   useEffect(() => {
+    fetchSubscription();
     fetchAppointments();
-  }, [fetchAppointments]);
+  }, [fetchSubscription, fetchAppointments]);
 
-  // --- GENERIC STATUS UPDATER (Approve/Reject/Screening Failed) ---
+  // --- GENERIC STATUS UPDATER ---
   const updateStatus = async (appointmentId, newStatus) => {
     try {
       const res = await fetch(
@@ -61,7 +105,6 @@ const HospitalAppointments = () => {
 
       if (!res.ok) throw new Error('Update failed');
 
-      // Optimistic UI Update
       setAppointments(prev =>
         prev.map(app =>
           app.id === appointmentId ? { ...app, status: newStatus } : app
@@ -72,42 +115,33 @@ const HospitalAppointments = () => {
     }
   };
 
-  // --- SUCCESSFUL DONATION (Fulfill) ---
-  const handleDonated = async (appointment) => {
-    if (!window.confirm(`Confirm that ${appointment.donorName} has successfully donated?`)) return;
-
+  // --- CONFIRM TRANSFUSION ---
+  const handleConfirmTransfusion = async (appointmentId, requestId) => {
+    if (!window.confirm("Confirm that the transfusion is complete? This will finalize the process and generate an invoice.")) return;
+    
     try {
-      const res = await fetch(
-        `${BASE_URL}/api/hospital/appointments/${appointment.id}/fulfill/`,
-        { 
-          method: 'POST', 
-          headers: { 'Content-Type': 'application/json' } 
-        }
-      );
+      const res = await fetch(`${BASE_URL}/api/hospital/transfusion/confirm/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId, requestId }),
+      });
+      
+      if (!res.ok) throw new Error('Confirmation failed');
 
-      if (!res.ok) throw new Error('Fulfill failed');
-
-      setAppointments(prev =>
-        prev.map(app =>
-          app.id === appointment.id ? { ...app, status: 'Fulfilled' } : app
-        )
+      setAppointments(prev => 
+        prev.map(app => app.id === appointmentId ? { ...app, status: 'Transfusion Done' } : app)
       );
-      alert('✅ Donation Recorded! Blood stock has been updated.');
+      alert('✅ Transfusion Recorded! The invoice has been generated.');
     } catch (err) {
-      alert('Failed to record donation. Please check server connection.');
+      alert('Failed to finalize transfusion. Please check server connection.');
     }
-  };
-
-  // --- FAILED SCREENING ---
-  const handleFailedScreening = async (appointmentId) => {
-    if (!window.confirm('Mark this donor as failed screening? (e.g. Low Hemoglobin, BP issues)')) return;
-    await updateStatus(appointmentId, 'Screening Failed');
   };
 
   // --- HELPER: STATUS COLORS ---
   const getStatusBadge = (status) => {
     switch (status) {
-      case 'Fulfilled':        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'Transfusion Done': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'Screening Passed': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'Confirmed':        return 'bg-green-100 text-green-800 border-green-200';
       case 'Screening Failed': return 'bg-orange-100 text-orange-800 border-orange-200';
       case 'Rejected':         return 'bg-red-100 text-red-800 border-red-200';
@@ -116,12 +150,42 @@ const HospitalAppointments = () => {
     }
   };
 
+  // --- BLOCKING BANNER FOR EXPIRED SUBSCRIPTION ---
+  if (!subLoading && subscription.status === 'Expired') {
+    return (
+      <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 max-w-md text-center shadow-2xl">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Subscription Expired</h2>
+          <p className="text-gray-600 mb-6">
+            Your access to the donor portal has been suspended. Please renew your hospital subscription to continue managing appointments.
+          </p>
+          <button 
+            onClick={handleRenew}
+            className="w-full bg-red-600 text-white font-bold py-3 rounded-xl hover:bg-red-700 transition shadow-lg"
+          >
+            Pay ₹200 to Renew
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
-      <h1 className="text-3xl font-bold text-gray-900 mb-2">Donor Appointment Requests 📅</h1>
-      <p className="text-gray-500 mb-8">
-        Manage donor flow: Approve requests, conduct screenings, and record donations.
-      </p>
+      <div className="flex justify-between items-end mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Donor Appointment Requests 📅</h1>
+          <p className="text-gray-500">
+            Manage donor flow sequentially: Approve requests, conduct screenings, and finalize transfusions.
+          </p>
+        </div>
+        {!subLoading && subscription.endDate && (
+          <div className="text-sm font-medium text-gray-600 bg-white px-4 py-2 rounded-lg border shadow-sm">
+            Subscription Valid Until: <span className="text-gray-900">{subscription.endDate}</span>
+          </div>
+        )}
+      </div>
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
@@ -158,7 +222,7 @@ const HospitalAppointments = () => {
             ) : (
               appointments.map(app => (
                 <tr key={app.id} className="hover:bg-gray-50 transition">
-                  <td className="px-6 py-4 text-sm text-gray-500">{app.requestDate}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500">{app.requestDate || app.date}</td>
                   
                   <td className="px-6 py-4">
                     <div className="font-bold text-gray-900">{app.donorName}</div>
@@ -184,7 +248,7 @@ const HospitalAppointments = () => {
                   
                   <td className="px-6 py-4 text-right">
                     
-                    {/* PENDING: Approve/Reject */}
+                    {/* STEP 1: PENDING -> Approve/Reject */}
                     {app.status === 'Pending' && (
                       <div className="flex justify-end gap-2">
                         <button 
@@ -202,25 +266,42 @@ const HospitalAppointments = () => {
                       </div>
                     )}
 
-                    {/* CONFIRMED: Mark Donated / Failed Screening */}
+                    {/* STEP 2: CONFIRMED -> Pass/Fail Screening */}
                     {app.status === 'Confirmed' && (
                       <div className="flex justify-end gap-2">
                         <button 
-                          onClick={() => handleDonated(app)} 
-                          className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-700 shadow-sm flex items-center gap-1"
+                          onClick={() => updateStatus(app.id, 'Screening Passed')} 
+                          className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-blue-700 shadow-sm"
                         >
-                          <span>🩸</span> Mark Donated
+                          Pass Screening
                         </button>
                         <button 
-                          onClick={() => handleFailedScreening(app.id)} 
+                          onClick={() => {
+                            if (window.confirm('Mark this donor as failed screening?')) {
+                              updateStatus(app.id, 'Screening Failed');
+                            }
+                          }} 
                           className="bg-orange-50 border border-orange-200 text-orange-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-orange-100 transition"
                         >
-                          Failed Screening
+                          Fail Screening
+                        </button>
+                      </div>
+                    )}
+
+                    {/* STEP 3: SCREENING PASSED -> Confirm Transfusion */}
+                    {app.status === 'Screening Passed' && (
+                      <div className="flex justify-end gap-2">
+                        <button 
+                          onClick={() => handleConfirmTransfusion(app.id, app.requestId || 1)} 
+                          className="bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-purple-700 shadow-sm flex items-center gap-1 animate-pulse"
+                        >
+                          <span>🩸</span> Confirm Transfusion
                         </button>
                       </div>
                     )}
 
                     {/* FINAL STATES */}
+                    {app.status === 'Transfusion Done' && <span className="text-xs text-purple-600 font-bold">Process Complete ✅</span>}
                     {app.status === 'Fulfilled' && <span className="text-xs text-green-600 font-bold">Stock Added ✅</span>}
                     {app.status === 'Screening Failed' && <span className="text-xs text-orange-600 font-bold">Not Eligible ⚠️</span>}
                     {app.status === 'Rejected' && <span className="text-xs text-gray-400 italic">Request Declined</span>}
