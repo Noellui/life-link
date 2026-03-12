@@ -1,18 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
+const BASE_URL = 'http://127.0.0.1:8000';
+
 const HospitalDashboard = () => {
   // --- STATE: MODAL CONTROL ---
   const [activeModal, setActiveModal] = useState(null);
   const [registrationSuccess, setRegistrationSuccess] = useState(null);
 
+  // --- STATE: RESOLVED HOSPITAL (from DB) ---
+  const [hospitalId, setHospitalId] = useState(null);
+  const [hospitalName, setHospitalName] = useState('Loading Hospital…');
+
   // --- STATE: FORMS ---
   const [newPatient, setNewPatient] = useState({
-    name: '', email: '', bloodType: 'O+', age: '', gender: 'Male', contact: '', doctor: 'Dr. House', urgency: 'High', units: 1
+    name: '', email: '', bloodType: 'O+', age: '', gender: 'Male',
+    contact: '', doctor: 'Dr. House', urgency: 'High', units: 1,
   });
-
   const [newDonor, setNewDonor] = useState({
-    name: '', email: '', bloodGroup: 'O+', phone: '', city: 'Vadodara', age: '', gender: 'Male'
+    name: '', email: '', bloodGroup: 'O+', phone: '', city: 'Vadodara', age: '', gender: 'Male',
   });
 
   // --- STATE: DATA ---
@@ -20,86 +26,113 @@ const HospitalDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [stats, setStats] = useState({ totalUnits: 0, criticalAlerts: 0, pendingCount: 0 });
 
-  // --- STATE: DYNAMIC HOSPITAL NAME ---
-  const [hospitalName, setHospitalName] = useState("Loading Hospital...");
+  // ── Helper: get logged-in hospital user email ─────────────────────────────
+  const getHospitalEmail = () => {
+    const stored =
+      JSON.parse(localStorage.getItem('user_data') || 'null') ||
+      JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
+    return stored?.email || '';
+  };
 
-  // --- EFFECT: LOAD ALL DATA (Fetched from Backend) ---
+  // ── Step 1: Resolve hospital_id from backend using the logged-in email ────
   useEffect(() => {
-    const fetchDashboardData = async () => {
+    const resolveHospital = async () => {
+      const email = getHospitalEmail();
+      if (!email) return;
+
       try {
-        // 1. Fetch live stats, inventory, AND hospital name from backend
-        const statsResponse = await fetch('http://localhost:8000/api/admin/stats/?hospital_id=9001');
-        if (statsResponse.ok) {
-          const data = await statsResponse.json();
+        const res = await fetch(
+          `${BASE_URL}/api/hospital/profile/?email=${encodeURIComponent(email)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setHospitalName(data.hospitalName || 'Hospital Dashboard');
+        }
 
-          // Set the dynamic hospital name from the database
-          if (data.hospital_name) {
-            setHospitalName(data.hospital_name);
-          }
+        // Also fetch hospital_id via the admin/stats endpoint with email-based lookup
+        // We use the profile endpoint which returns hospitalId too (add it to backend)
+        // Fallback: use the stats endpoint with just email
+        const statsRes = await fetch(
+          `${BASE_URL}/api/admin/stats/?email=${encodeURIComponent(email)}`
+        );
+        if (statsRes.ok) {
+          const data = await statsRes.json();
+          if (data.hospital_id) setHospitalId(data.hospital_id);
+          if (data.hospital_name) setHospitalName(data.hospital_name);
 
-          const formattedInventory = data.inventory.map(item => ({
-            type: item.type,
-            units: item.count,
-            status: item.status
+          const formattedInventory = (data.inventory || []).map(item => ({
+            type: item.type, units: item.count, status: item.status,
           }));
-
           setInventory(formattedInventory);
-
           setStats({
-            totalUnits: data.stats.total_units,
-            criticalAlerts: data.inventory.filter(i => i.status === 'Critical').length,
-            pendingCount: data.stats.pending_requests
+            totalUnits:    data.stats?.total_units      || 0,
+            criticalAlerts: (data.inventory || []).filter(i => i.status === 'Critical').length,
+            pendingCount:  data.stats?.pending_requests || 0,
           });
         }
+      } catch (error) {
+        console.error('Error resolving hospital:', error);
+        setHospitalName('Hospital Dashboard');
+      }
+    };
 
-        // 2. Fetch live requests
-        const reqResponse = await fetch('http://localhost:8000/api/donor/requests/');
-        if (reqResponse.ok) {
-          const reqData = await reqResponse.json();
-          const formattedRequests = reqData.map(req => ({
-            ...req,
-            type: req.type || "Online Request"
-          }));
-          setRequests(formattedRequests);
+    resolveHospital();
+  }, []);
+
+  // ── Step 2: Fetch dashboard data once we have hospitalId (or email) ───────
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      const email = getHospitalEmail();
+      if (!email) return;
+
+      try {
+        // Fetch requests for this specific hospital using email
+        const reqRes = await fetch(
+          `${BASE_URL}/api/hospital/requests/?email=${encodeURIComponent(email)}`
+        );
+        if (reqRes.ok) {
+          const reqData = await reqRes.json();
+          setRequests(
+            Array.isArray(reqData)
+              ? reqData.slice(0, 5).map(r => ({ ...r, type: 'Online Request', patientName: r.patient }))
+              : []
+          );
         }
       } catch (error) {
-        console.error("Error connecting to backend:", error);
-        setHospitalName("Hospital Dashboard");
+        console.error('Error fetching hospital data:', error);
       }
     };
 
     fetchDashboardData();
-  }, [activeModal]);
+  }, [hospitalId, activeModal]);
 
   // --- HANDLERS ---
   const handlePatientChange = (e) => setNewPatient({ ...newPatient, [e.target.name]: e.target.value });
-  const handleDonorChange = (e) => setNewDonor({ ...newDonor, [e.target.name]: e.target.value });
+  const handleDonorChange   = (e) => setNewDonor({ ...newDonor, [e.target.name]: e.target.value });
 
   const generatePassword = () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let pass = "";
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let pass = '';
     for (let i = 0; i < 6; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
     return pass;
   };
 
-  // 1. SUBMIT PATIENT
+  // ── SUBMIT PATIENT ────────────────────────────────────────────────────────
   const handlePatientSubmit = async (e) => {
     e.preventDefault();
     const tempPassword = generatePassword();
 
-    const registerPayload = {
-      fullName: newPatient.name,
-      email: newPatient.email,
-      password: tempPassword,
-      phone: newPatient.contact || '0000000000',
-      role: 'Recipient'
-    };
-
     try {
-      const regRes = await fetch('http://localhost:8000/api/register/', {
+      const regRes = await fetch(`${BASE_URL}/api/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(registerPayload)
+        body: JSON.stringify({
+          fullName: newPatient.name,
+          email:    newPatient.email,
+          password: tempPassword,
+          phone:    newPatient.contact || '0000000000',
+          role:     'Recipient',
+        }),
       });
 
       if (!regRes.ok) {
@@ -111,92 +144,86 @@ const HospitalDashboard = () => {
       const regData = await regRes.json();
       const newUserId = regData.userId;
 
-      const requestPayload = {
-        userId: newUserId,
-        bloodGroup: newPatient.bloodType,
-        units: parseInt(newPatient.units),
-        urgency: newPatient.urgency,
-        doctorName: newPatient.doctor,
-        hospitalId: 9001,
-      };
-
-      const reqRes = await fetch('http://localhost:8000/api/recipient/create-request/', {
+      // Use the resolved hospital_id (never hardcoded)
+      const reqRes = await fetch(`${BASE_URL}/api/recipient/create-request/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestPayload)
+        body: JSON.stringify({
+          userId:     newUserId,
+          bloodGroup: newPatient.bloodType,
+          units:      parseInt(newPatient.units),
+          urgency:    newPatient.urgency,
+          doctorName: newPatient.doctor,
+          hospitalId: hospitalId, // ← from DB, not hardcoded
+        }),
       });
 
       if (reqRes.ok) {
         const reqResult = await reqRes.json();
-
-        const newRequest = {
-          id: reqResult.requestId,
+        setRequests(prev => [{
+          id:          reqResult.requestId,
           patientName: newPatient.name,
-          bloodGroup: newPatient.bloodType,
-          units: parseInt(newPatient.units),
-          doctor: newPatient.doctor,
-          urgency: newPatient.urgency,
-          status: "Pending",
-          type: "Internal Admission",
-        };
-
-        setRequests([newRequest, ...requests]);
+          patient:     newPatient.name,
+          bloodGroup:  newPatient.bloodType,
+          units:       parseInt(newPatient.units),
+          doctor:      newPatient.doctor,
+          urgency:     newPatient.urgency,
+          status:      'Pending',
+          type:        'Internal Admission',
+        }, ...prev]);
 
         setRegistrationSuccess({
           type: 'Patient',
-          id: `REQ-${reqResult.requestId}`,
+          id:   `REQ-${reqResult.requestId}`,
           name: newPatient.name,
           email: newPatient.email,
-          password: tempPassword
+          password: tempPassword,
         });
       } else {
-        alert("Patient registered, but failed to create blood request.");
+        alert('Patient registered but blood request failed. Check server.');
       }
-
-    } catch (error) {
-      alert("Error connecting to the server.");
+    } catch {
+      alert('Error connecting to the server.');
     }
   };
 
-  // 2. SUBMIT DONOR
+  // ── SUBMIT DONOR ──────────────────────────────────────────────────────────
   const handleDonorSubmit = async (e) => {
     e.preventDefault();
     const tempPassword = generatePassword();
 
-    const payload = {
-      fullName: newDonor.name,
-      email: newDonor.email,
-      password: tempPassword,
-      phone: newDonor.phone,
-      role: 'Donor',
-      bloodGroup: newDonor.bloodGroup,
-      city: newDonor.city,
-      gender: newDonor.gender,
-      dob: '2000-01-01',
-      weight: 65
-    };
-
     try {
-      const response = await fetch('http://localhost:8000/api/register/', {
+      const res = await fetch(`${BASE_URL}/api/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          fullName:   newDonor.name,
+          email:      newDonor.email,
+          password:   tempPassword,
+          phone:      newDonor.phone,
+          role:       'Donor',
+          bloodGroup: newDonor.bloodGroup,
+          city:       newDonor.city,
+          gender:     newDonor.gender,
+          dob:        '2000-01-01',
+          weight:     65,
+        }),
       });
 
-      if (response.ok) {
+      if (res.ok) {
         setRegistrationSuccess({
-          type: 'Donor',
-          id: 'Pending Verification',
-          name: newDonor.name,
-          email: newDonor.email,
-          password: tempPassword
+          type:     'Donor',
+          id:       'Pending Verification',
+          name:     newDonor.name,
+          email:    newDonor.email,
+          password: tempPassword,
         });
       } else {
-        const err = await response.json();
+        const err = await res.json();
         alert(`Failed to register donor: ${err.error}`);
       }
-    } catch (error) {
-      alert("Error connecting to the server.");
+    } catch {
+      alert('Error connecting to the server.');
     }
   };
 
@@ -210,11 +237,10 @@ const HospitalDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 pb-12 relative">
 
-      {/* 1. Header Section */}
+      {/* 1. Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <div>
-            {/* DYNAMIC hospital name from database */}
             <h1 className="text-2xl font-bold text-gray-900">{hospitalName} 🏥</h1>
             <p className="text-gray-500 text-sm mt-1">Dashboard & Inventory Management</p>
           </div>
@@ -225,7 +251,6 @@ const HospitalDashboard = () => {
             >
               <span>👤</span> New Patient
             </button>
-
             <button
               onClick={() => setActiveModal('donor')}
               className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition shadow-sm flex items-center gap-2"
@@ -238,7 +263,7 @@ const HospitalDashboard = () => {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
 
-        {/* 2. Key Metrics Cards */}
+        {/* 2. Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
@@ -276,7 +301,7 @@ const HospitalDashboard = () => {
               {inventory.length === 0 ? (
                 <div className="col-span-4 text-center py-8 text-gray-400">
                   <p className="text-lg">No inventory data found.</p>
-                  <p className="text-sm mt-1">Make sure blood types are inserted in the database and restart Django.</p>
+                  <p className="text-sm mt-1">Make sure blood types are inserted in the database.</p>
                 </div>
               ) : (
                 inventory.map((item) => (
@@ -296,58 +321,74 @@ const HospitalDashboard = () => {
               )}
             </div>
             <div className="px-6 pb-4">
-              <Link to="/manage-stock" className="text-sm text-blue-600 font-medium hover:underline">Manage Inventory Details →</Link>
+              <Link to="/manage-stock" className="text-sm text-blue-600 font-medium hover:underline">
+                Manage Inventory Details →
+              </Link>
             </div>
           </div>
 
-          {/* 4. Recent Requests */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
-              <h3 className="text-lg font-bold text-gray-800">Recent Requests</h3>
-            </div>
-            <div className="divide-y divide-gray-100">
-              {requests.slice(0, 5).map((req) => (
-                <div key={req.id} className="p-4 hover:bg-gray-50 transition">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <p className="font-bold text-gray-900">{req.patientName || req.patient}</p>
-                      <p className="text-xs text-gray-500">#{req.id} • {req.doctor || 'Emergency Dept'}</p>
-                    </div>
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                      req.bloodGroup === 'AB-' || req.bloodGroup === 'O-' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
-                    }`}>{req.bloodGroup}</span>
-                  </div>
-                  <div className="flex justify-between items-center mt-3">
-                    <span className={`text-xs font-medium px-2 py-1 rounded-full ${
-                      req.urgency === 'Critical' ? 'bg-red-100 text-red-700' :
-                      req.urgency === 'High' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
-                    }`}>{req.urgency}</span>
+          {/* 4. Right Column */}
+          <div className="flex flex-col gap-6">
 
-                    <span className={`text-xs px-2 py-0.5 rounded border ${
-                      req.type === 'Internal Admission'
-                        ? 'bg-gray-100 text-gray-600 border-gray-200'
-                        : 'bg-purple-50 text-purple-700 border-purple-200'
-                    }`}>
-                      {req.type === 'Internal Admission' ? 'Internal' : 'Online'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              <div className="p-4 text-center">
-                <Link to="/patient-requests" className="text-sm text-blue-600 font-medium hover:underline">Process All Requests →</Link>
+            {/* Recent Requests */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex-1">
+              <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                <h3 className="text-lg font-bold text-gray-800">Recent Requests</h3>
               </div>
-              <Link 
-        to="/hospital-profile" 
-        className="flex items-center justify-center gap-2 w-full py-2.5 bg-gray-900 text-white text-sm font-bold rounded-lg hover:bg-black transition shadow-md"
-      >
-        <span>⚙️</span> Update Profile
-      </Link>
+              <div className="divide-y divide-gray-100">
+                {requests.length === 0 ? (
+                  <div className="p-6 text-center text-gray-400 text-sm">
+                    No patient requests yet.
+                  </div>
+                ) : (
+                  requests.slice(0, 4).map((req) => (
+                    <div key={req.id} className="p-4 hover:bg-gray-50 transition">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-bold text-gray-900">{req.patientName || req.patient || '—'}</p>
+                          <p className="text-xs text-gray-500">#{req.id} • {req.doctor || 'Emergency Dept'}</p>
+                        </div>
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${
+                          req.bloodGroup === 'AB-' || req.bloodGroup === 'O-'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-gray-100 text-gray-700'
+                        }`}>
+                          {req.bloodGroup}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center mt-2">
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          req.urgency === 'Critical' ? 'bg-red-100 text-red-700' :
+                          req.urgency === 'High'     ? 'bg-orange-100 text-orange-700' :
+                                                       'bg-blue-100 text-blue-700'
+                        }`}>{req.urgency}</span>
+                        <span className="text-xs px-2 py-0.5 rounded border bg-gray-100 text-gray-600 border-gray-200">
+                          {req.type === 'Internal Admission' ? 'Internal' : 'Online'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div className="p-4 text-center border-t border-gray-100">
+                  <Link to="/patient-requests" className="text-sm text-blue-600 font-medium hover:underline">
+                    Process All Requests →
+                  </Link>
+                </div>
+              </div>
             </div>
+
+            {/* Hospital Profile Quick Link */}
+            <Link
+              to="/hospital-profile"
+              className="flex items-center justify-center gap-2 w-full py-3 bg-gray-900 text-white text-sm font-bold rounded-xl hover:bg-black transition shadow-md"
+            >
+              <span>⚙️</span> Hospital Settings & Profile
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* --- SHARED REGISTRATION MODAL --- */}
+      {/* ── REGISTRATION MODAL ── */}
       {activeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in-up">
@@ -356,7 +397,7 @@ const HospitalDashboard = () => {
               <h3 className="text-lg font-bold">
                 {registrationSuccess
                   ? `${registrationSuccess.type} Registered ✅`
-                  : activeModal === 'patient' ? "Register New Patient" : "Register New Donor"}
+                  : activeModal === 'patient' ? 'Register New Patient' : 'Register New Donor'}
               </h3>
               <button onClick={closeAndReset} className="text-2xl leading-none hover:text-gray-200">&times;</button>
             </div>
@@ -368,16 +409,17 @@ const HospitalDashboard = () => {
                 {activeModal === 'patient' && (
                   <form onSubmit={handlePatientSubmit} className="space-y-4">
                     <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800 mb-4">
-                      <strong>Note:</strong> Creates a Recipient Account and auto-generates a blood request.
+                      <strong>Note:</strong> Creates a Recipient Account and auto-generates a blood request
+                      {hospitalId ? ` for Hospital #${hospitalId}.` : ' (hospital resolved from your login).'}
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Patient Name</label>
-                        <input required type="text" name="name" value={newPatient.name} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="Full Name"/>
+                        <input required type="text" name="name" value={newPatient.name} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="Full Name" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Email (Login ID)</label>
-                        <input required type="email" name="email" value={newPatient.email} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="patient@example.com"/>
+                        <input required type="email" name="email" value={newPatient.email} onChange={handlePatientChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="patient@example.com" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Blood Type</label>
@@ -417,11 +459,11 @@ const HospitalDashboard = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Donor Name</label>
-                        <input required type="text" name="name" value={newDonor.name} onChange={handleDonorChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="Full Name"/>
+                        <input required type="text" name="name" value={newDonor.name} onChange={handleDonorChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="Full Name" />
                       </div>
                       <div className="col-span-2">
                         <label className="block text-sm font-medium text-gray-700 mb-1">Email (Login ID)</label>
-                        <input required type="email" name="email" value={newDonor.email} onChange={handleDonorChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="donor@example.com"/>
+                        <input required type="email" name="email" value={newDonor.email} onChange={handleDonorChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="donor@example.com" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
@@ -431,7 +473,7 @@ const HospitalDashboard = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                        <input required name="phone" value={newDonor.phone} onChange={handleDonorChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="98765..." />
+                        <input required name="phone" value={newDonor.phone} onChange={handleDonorChange} className="w-full border border-gray-300 rounded-lg p-2" placeholder="98765…" />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Age</label>
@@ -454,14 +496,10 @@ const HospitalDashboard = () => {
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto text-3xl ${
                   registrationSuccess.type === 'Patient' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'
                 }`}>✓</div>
-
                 <div>
                   <h4 className="text-xl font-bold text-gray-900">Account Created Successfully</h4>
-                  <p className="text-gray-500 text-sm mt-2">
-                    Please share these details with the {registrationSuccess.type}.
-                  </p>
+                  <p className="text-gray-500 text-sm mt-2">Please share these details with the {registrationSuccess.type}.</p>
                 </div>
-
                 <div className="bg-gray-100 p-6 rounded-xl border border-gray-300 text-left space-y-3">
                   <div>
                     <span className="block text-xs font-bold text-gray-500 uppercase">{registrationSuccess.type} Name</span>
@@ -481,7 +519,6 @@ const HospitalDashboard = () => {
                     </div>
                   </div>
                 </div>
-
                 <button onClick={closeAndReset} className="w-full bg-gray-800 text-white font-bold py-3 rounded-lg hover:bg-gray-900 transition shadow-lg">
                   Done (Details Shared)
                 </button>
@@ -490,7 +527,6 @@ const HospitalDashboard = () => {
           </div>
         </div>
       )}
-
     </div>
   );
 };

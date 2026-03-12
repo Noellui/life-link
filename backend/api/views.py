@@ -1770,3 +1770,93 @@ def get_hospital_profile(request):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+    
+def get_recipient_profile(request):
+    """
+    GET /api/recipient/profile/?email=<email>
+    Returns recipient's contact info and blood type.
+    """
+    email = request.GET.get('email')
+    if not email:
+        return JsonResponse({'error': 'email required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT r.full_name, r.contact_number, r.address, bt.blood_type
+                FROM recipient_tbl r
+                JOIN user_registration_tbl u ON r.user_id = u.user_id
+                LEFT JOIN blood_type_tbl bt  ON r.blood_id = bt.blood_id
+                WHERE u.email = %s
+            """, [email])
+            row = cursor.fetchone()
+        if not row:
+            return JsonResponse({'error': 'Recipient profile not found'}, status=404)
+        return JsonResponse({
+            'fullName':      row[0] or '',
+            'contactNumber': row[1] or '',
+            'address':       row[2] or '',
+            'bloodType':     row[3] or '',
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def update_recipient_profile(request):
+    """
+    PUT /api/recipient/profile/update/
+    Body: { email, contactNumber, address }
+    Updates the recipient's mutable fields.
+    """
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data    = json.loads(request.body)
+        email   = data.get('email')
+        contact = data.get('contactNumber', '')
+        address = data.get('address', '')
+        if not email:
+            return JsonResponse({'error': 'email required'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE recipient_tbl r
+                JOIN user_registration_tbl u ON r.user_id = u.user_id
+                SET r.contact_number = %s, r.address = %s
+                WHERE u.email = %s
+            """, [contact, address, email])
+        return JsonResponse({'message': 'Profile updated successfully.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def update_hospital_profile(request):
+    """
+    PUT /api/hospital/profile/update/
+    Body: { email, hospitalName, address, city }
+    Updates hospital registration details.
+    """
+    if request.method != 'PUT':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data  = json.loads(request.body)
+        email = data.get('email')
+        if not email:
+            return JsonResponse({'error': 'email required'}, status=400)
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                UPDATE hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                SET h.hospital_name = %s,
+                    h.address       = %s,
+                    h.city          = %s
+                WHERE u.email = %s
+            """, [
+                data.get('hospitalName', ''),
+                data.get('address', ''),
+                data.get('city', ''),
+                email,
+            ])
+        return JsonResponse({'message': 'Hospital profile updated successfully.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

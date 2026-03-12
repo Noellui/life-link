@@ -69,4 +69,11 @@ urlpatterns = [
     # 2. Make sure you also have the subscription routes from earlier!
     path('api/hospital/subscription/', views.get_hospital_subscription, name='hospital_subscription'),
     path('api/hospital/subscription/renew/', views.renew_hospital_subscription, name='hospital_subscription_renew'),
+
+    # Recipient profile (GET + UPDATE)
+    path('recipient/profile/', views.get_recipient_profile, name='recipient_profile'),
+    path('recipient/profile/update/', views.update_recipient_profile, name='update_recipient_profile'),
+
+    # Hospital profile update
+    path('hospital/profile/update/', views.update_hospital_profile, name='update_hospital_profile'),
 ]
