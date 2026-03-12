@@ -79,7 +79,7 @@ export default function MyBills() {
     const amountWithGST = Math.round(bill.amount * 1.18 * 100);
 
     const options = {
-      key: 'rzp_test_YOUR_KEY_HERE', // Replace with your actual Razorpay Key ID
+      key: 'rzp_test_SQPi7UmKIOJJal', // Replace with your actual Razorpay Key ID
       amount: amountWithGST,
       currency: 'INR',
       name: 'Whisper Wire',

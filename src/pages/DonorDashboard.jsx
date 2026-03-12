@@ -42,6 +42,15 @@ const DonorDashboard = () => {
     return s ? JSON.parse(s) : null;
   };
 
+  // Extracted so it can be called independently after interest is expressed
+  const fetchAppointments = async (email) => {
+    const appRes = await fetch(`http://127.0.0.1:8000/api/donor/appointments/?email=${email}`);
+    if (appRes.ok) {
+      const appData = await appRes.json();
+      setMyAppointment(appData.find(a => a.status !== 'Canceled') || null);
+    }
+  };
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       const loggedInUser = getLoggedInUser();
@@ -66,16 +75,12 @@ const DonorDashboard = () => {
           });
         }
 
-        // 2. Urgent requests
-        const reqRes = await fetch('http://127.0.0.1:8000/api/donor/requests/');
+        // 2. Urgent requests — now correctly passes email for city-based filtering
+        const reqRes = await fetch(`http://127.0.0.1:8000/api/donor/requests/?email=${email}`);
         if (reqRes.ok) setNearbyRequests(await reqRes.json());
 
         // 3. Upcoming appointment
-        const appRes = await fetch(`http://127.0.0.1:8000/api/donor/appointments/?email=${email}`);
-        if (appRes.ok) {
-          const appData = await appRes.json();
-          setMyAppointment(appData.find(a => a.status !== 'Canceled') || null);
-        }
+        await fetchAppointments(email);
 
         // 4. Full history
         const histRes = await fetch(`http://127.0.0.1:8000/api/donor/history/?email=${email}`);
@@ -98,12 +103,13 @@ const DonorDashboard = () => {
     const loggedInUser = getLoggedInUser();
     if (!loggedInUser?.email) return navigate('/login');
 
+    const email = loggedInUser.email;
     setInterestLoading(req.id);
     try {
       const res = await fetch('http://127.0.0.1:8000/api/donor/interest/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loggedInUser.email, requestId: req.id }),
+        body: JSON.stringify({ email, requestId: req.id }),
       });
       const data = await res.json();
       alert(`✅ ${data.message}`);
@@ -111,12 +117,18 @@ const DonorDashboard = () => {
       const updated = [...new Set([...interestedIds, req.id])];
       setInterestedIds(updated);
       localStorage.setItem('interested_request_ids', JSON.stringify(updated));
+
+      // Refresh appointment state so the new appointment appears immediately
+      await fetchAppointments(email);
     } catch {
       // Fallback: mark locally anyway
       const updated = [...new Set([...interestedIds, req.id])];
       setInterestedIds(updated);
       localStorage.setItem('interested_request_ids', JSON.stringify(updated));
       alert(`✅ Your interest has been noted! The hospital will follow up.`);
+
+      // Still attempt appointment refresh on fallback
+      await fetchAppointments(email).catch(() => {});
     } finally {
       setInterestLoading(null);
     }
@@ -418,7 +430,6 @@ const DonorDashboard = () => {
                         <span className="block text-xl font-bold text-gray-900">{myAppointment.date?.split('-')[2]}</span>
                       </div>
                       <div>
-                        {/* FIX: time now shows real value from DB (e.g. "02:30 PM") */}
                         <p className="text-lg font-bold text-gray-900">{myAppointment.time}</p>
                         <p className="text-gray-600 text-sm mt-1">{myAppointment.centerName}</p>
                         {myAppointment.status === 'Pending' && (
@@ -486,7 +497,6 @@ const printCertificate = (record, userName) => {
   const certId = `LL-${String(record.id).padStart(5, '0')}`;
   const issueDate = new Date().toLocaleDateString('en-GB');
 
-  // Open a new window for printing
   const printWindow = window.open('', '_blank');
   
   const htmlContent = `
@@ -496,7 +506,6 @@ const printCertificate = (record, userName) => {
         <meta charset="UTF-8">
         <title>LifeLink Certificate - ${donorName}</title>
         <style>
-            /* FORCE LANDSCAPE AND BACKGROUND COLORS FOR PRINTING */
             @page {
                 size: A4 landscape;
                 margin: 0; 
@@ -520,7 +529,6 @@ const printCertificate = (record, userName) => {
                 --border-light: #969696;
             }
 
-            /* Certificate Container */
             .certificate {
                 width: 297mm;
                 height: 210mm;
@@ -532,7 +540,6 @@ const printCertificate = (record, userName) => {
                 box-sizing: border-box;
             }
 
-            /* Top Header Bar */
             .header-bar {
                 background-color: var(--brand-red);
                 height: 25mm;
@@ -544,7 +551,6 @@ const printCertificate = (record, userName) => {
                 font-weight: bold;
             }
 
-            /* Outer Red Frame */
             .frame {
                 margin: 5mm;
                 flex-grow: 1;
@@ -557,7 +563,6 @@ const printCertificate = (record, userName) => {
                 box-sizing: border-box;
             }
 
-            /* Watermark Background */
             .watermark {
                 position: absolute;
                 top: 50%;
@@ -571,7 +576,6 @@ const printCertificate = (record, userName) => {
                 pointer-events: none;
             }
 
-            /* Content Sections */
             .content {
                 z-index: 1;
                 text-align: center;
@@ -608,7 +612,6 @@ const printCertificate = (record, userName) => {
                 color: var(--text-gray);
             }
 
-            /* Bottom Section: ID, Seal, Signature */
             .bottom-row {
                 margin-top: auto;
                 width: 100%;
@@ -722,11 +725,8 @@ const printCertificate = (record, userName) => {
         </div>
 
         <script>
-            // Automatically trigger print dialog once loaded
             window.onload = function() {
                 window.print();
-                // Optional: Close window after printing
-                // window.onafterprint = function() { window.close(); }
             };
         </script>
     </body>

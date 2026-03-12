@@ -119,7 +119,7 @@ export default function HospitalProfile() {
     }
 
     const options = {
-      key: 'rzp_test_YOUR_KEY_HERE',
+      key: 'rzp_test_SQPi7UmKIOJJal',
       amount: 200 * 100,
       currency: 'INR',
       name: 'LifeLink',

@@ -36,7 +36,6 @@ const PatientRequests = () => {
       }
 
       const data = await res.json();
-      // Ensure data is array and map keys for consistency if needed
       setRequests(Array.isArray(data) ? data : []);
       setError('');
     } catch (err) {
@@ -54,12 +53,12 @@ const PatientRequests = () => {
   const logStockMovement = (reqItem) => {
     const logEntry = {
       id: Date.now(),
-      type: 'Outgoing', 
+      type: 'Outgoing',
       source: `Req #${String(reqItem.id).slice(-4)}: ${reqItem.patient}`,
       person: reqItem.patient,
       email: reqItem.email || "N/A",
       bloodGroup: reqItem.bloodGroup,
-      quantity: parseInt(reqItem.units) * 450, // standard unit to ml
+      quantity: parseInt(reqItem.units) * 450,
       time: new Date().toLocaleString()
     };
 
@@ -95,14 +94,13 @@ const PatientRequests = () => {
         throw new Error('Failed to update status on server');
       }
 
-      // If approved, update local storage stock logs for the dashboard
       if (newStatus === 'Approved' && reqItem) {
         logStockMovement(reqItem);
         alert(`Request Approved! Stock movement logged for ${reqItem.bloodGroup}.`);
       }
     } catch (err) {
       alert(`Error: ${err.message}. Reverting...`);
-      fetchRequests(); // Revert to server state
+      fetchRequests();
     }
   };
 
@@ -118,6 +116,21 @@ const PatientRequests = () => {
       case 'Critical': return 'bg-red-100 text-red-700 border-red-200';
       case 'High':     return 'bg-orange-100 text-orange-700 border-orange-200';
       default:         return 'bg-blue-50 text-blue-700 border-blue-200';
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'Approved':
+        return { classes: 'bg-green-50 text-green-700 border-green-200', icon: '✅' };
+      case 'Rejected':
+        return { classes: 'bg-red-50 text-red-700 border-red-200', icon: '❌' };
+      case 'Awaiting Payment':
+        return { classes: 'bg-orange-50 text-orange-700 border-orange-200', icon: '💳' };
+      case 'Fulfilled':
+        return { classes: 'bg-green-600 text-white border-green-600', icon: '🎉' };
+      default: // Pending
+        return { classes: 'bg-yellow-50 text-yellow-700 border-yellow-200', icon: '⏳' };
     }
   };
 
@@ -155,7 +168,7 @@ const PatientRequests = () => {
 
         {/* Filters */}
         <div className="bg-white rounded-t-xl border border-gray-200 border-b-0 p-4 flex gap-2 overflow-x-auto">
-          {['All', 'Pending', 'Approved', 'Rejected'].map(status => (
+          {['All', 'Pending', 'Approved', 'Awaiting Payment', 'Fulfilled', 'Rejected'].map(status => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
@@ -200,90 +213,85 @@ const PatientRequests = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {filteredRequests.map((req) => (
-                    <tr key={req.id} className="hover:bg-gray-50 transition">
-                      
-                      <td className="px-6 py-4">
-                        <span className="font-mono text-gray-500">
-                          #{String(req.id).slice(-4)}
-                        </span>
-                        <div className="text-xs text-gray-400 mt-1">{req.date}</div>
-                      </td>
+                  {filteredRequests.map((req) => {
+                    const badge = getStatusBadge(req.status);
+                    return (
+                      <tr key={req.id} className="hover:bg-gray-50 transition">
 
-                      <td className="px-6 py-4">
-                        <div className="font-bold text-gray-900">{req.patient}</div>
-                        <div className="text-xs text-gray-500">
-                          {req.gender !== 'N/A' && req.gender ? `${req.gender}, ` : ''}
-                          {req.age !== 'N/A' && req.age ? `${req.age} yrs` : 'Age N/A'}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-black text-red-600">
-                            {req.bloodGroup}
+                        <td className="px-6 py-4">
+                          <span className="font-mono text-gray-500">
+                            #{String(req.id).slice(-4)}
                           </span>
-                          <span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-bold text-gray-700">
-                            {req.units} Unit{req.units > 1 ? 's' : ''}
-                          </span>
-                        </div>
-                      </td>
+                          <div className="text-xs text-gray-400 mt-1">{req.date}</div>
+                        </td>
 
-                      <td className="px-6 py-4 text-gray-700">{req.doctor || "N/A"}</td>
-
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-bold border ${getUrgencyColor(req.urgency)}`}
-                        >
-                          {req.urgency}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border ${
-                            req.status === 'Approved'
-                              ? 'bg-green-50 text-green-700 border-green-200'
-                              : req.status === 'Rejected'
-                              ? 'bg-red-50 text-red-700 border-red-200'
-                              : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                          }`}
-                        >
-                          {req.status === 'Approved' && '✅'}
-                          {req.status === 'Rejected' && '❌'}
-                          {req.status === 'Pending'  && '⏳'}
-                          {req.status}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4 text-right">
-                        {req.status === 'Pending' ? (
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => handleAction(req.id, 'Approved')}
-                              className="bg-green-600 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-green-700 shadow-sm transition"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => handleAction(req.id, 'Rejected')}
-                              className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md text-xs font-bold hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition"
-                            >
-                              Reject
-                            </button>
+                        <td className="px-6 py-4">
+                          <div className="font-bold text-gray-900">{req.patient}</div>
+                          <div className="text-xs text-gray-500">
+                            {req.gender !== 'N/A' && req.gender ? `${req.gender}, ` : ''}
+                            {req.age !== 'N/A' && req.age ? `${req.age} yrs` : 'Age N/A'}
                           </div>
-                        ) : (
-                          <button
-                            onClick={() => handleAction(req.id, 'Pending')}
-                            className="text-xs text-gray-400 hover:text-blue-600 font-medium italic hover:not-italic transition"
-                            title="Undo — revert to Pending"
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-black text-red-600">
+                              {req.bloodGroup}
+                            </span>
+                            <span className="bg-gray-100 px-2 py-0.5 rounded text-xs font-bold text-gray-700">
+                              {req.units} Unit{req.units > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 text-gray-700">{req.doctor || "N/A"}</td>
+
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-bold border ${getUrgencyColor(req.urgency)}`}
                           >
-                            ↩ Undo
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            {req.urgency}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border ${badge.classes}`}
+                          >
+                            {badge.icon}
+                            {req.status}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          {req.status === 'Pending' ? (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => handleAction(req.id, 'Approved')}
+                                className="bg-green-600 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-green-700 shadow-sm transition"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleAction(req.id, 'Rejected')}
+                                className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md text-xs font-bold hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleAction(req.id, 'Pending')}
+                              className="text-xs text-gray-400 hover:text-blue-600 font-medium italic hover:not-italic transition"
+                              title="Undo — revert to Pending"
+                            >
+                              ↩ Undo
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 
@@ -291,8 +299,8 @@ const PatientRequests = () => {
                 <div className="p-10 text-center text-gray-500">
                   <p className="text-lg font-medium">No requests found.</p>
                   <p className="text-sm mt-1 text-gray-400">
-                    {requests.length === 0 
-                      ? "Waiting for new submissions..." 
+                    {requests.length === 0
+                      ? "Waiting for new submissions..."
                       : `No requests with status "${filterStatus}".`}
                   </p>
                 </div>
