@@ -1741,7 +1741,6 @@ def renew_hospital_subscription(request):
         return JsonResponse({'message': 'Subscription renewed for 30 days.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 def get_hospital_profile(request):
     """
     Fetches the hospital's profile details based on the logged-in user's email.
