@@ -237,14 +237,16 @@ def active_requests(request):
             if donor and donor.city:
                 donor_city = donor.city
 
+        # FIX 1: Fetch 'Approved' requests instead of 'Pending'
         query = BloodRequestTbl.objects.select_related(
             'recipient', 'hospital'
-        ).filter(status='Pending')
+        ).filter(status='Approved')
 
-        if donor_city:
-            query = query.filter(hospital__city__iexact=donor_city)
+        # FIX 2: City filter disabled — donors can see requests from all cities
+        # if donor_city:
+        #     query = query.filter(hospital__city__iexact=donor_city)
 
-        reqs = query.order_by('-request_date')[:4]
+        reqs = query.order_by('-request_date')[:10]
 
         data = []
         for req in reqs:
@@ -944,7 +946,6 @@ def fulfill_appointment_view(request, appointment_id):
             expiry_date=datetime.date.today() + datetime.timedelta(days=42),
         )
     except Exception:
-        # If blood_id column missing from model vs DB, use raw SQL
         with connection.cursor() as cursor:
             cursor.execute("""
                 INSERT INTO blood_storage_tbl
@@ -1233,15 +1234,9 @@ def mark_bill_paid(request):
 
 # =============================================================================
 # HOSPITAL APPOINTMENTS — LIST & UPDATE (NEW)
-# GET  /api/hospital/appointments/?email=<hospital_user_email>
-# POST /api/hospital/appointments/<id>/update/  { "status": "Confirmed"|"Rejected" }
-# POST /api/hospital/appointments/<id>/fulfill/ (reuses fulfill_appointment_view)
 # =============================================================================
 
 def hospital_appointments_list(request):
-    """
-    Returns all donor appointments for the hospital the logged-in user belongs to.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'error': 'email required'}, status=400)
@@ -1286,10 +1281,6 @@ def hospital_appointments_list(request):
 
 @csrf_exempt
 def hospital_appointment_update(request, appointment_id):
-    """
-    Updates appointment status to Confirmed or Rejected.
-    POST body: { "status": "Confirmed" | "Rejected" }
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1311,16 +1302,9 @@ def hospital_appointment_update(request, appointment_id):
 
 # =============================================================================
 # HOSPITAL EVENTS — LIST, CREATE, AND DONOR ROSTER (NEW)
-# GET  /api/hospital/events/?email=<hospital_user_email>
-# POST /api/hospital/events/create/   { email, title, date, startTime, endTime, location, seats, description }
-# GET  /api/hospital/events/<id>/donors/
 # =============================================================================
 
 def hospital_events_list(request):
-    """
-    Returns all events created by the hospital the logged-in user belongs to.
-    Also includes a count of registered donors and remaining seats per event.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'error': 'email required'}, status=400)
@@ -1370,10 +1354,6 @@ def hospital_events_list(request):
 
 @csrf_exempt
 def hospital_events_create(request):
-    """
-    Creates a new event for the hospital the logged-in user belongs to.
-    POST body: { email, title, date, startTime, endTime, location, seats, description }
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1391,7 +1371,6 @@ def hospital_events_create(request):
             return JsonResponse({'error': 'Missing required fields'}, status=400)
 
         with connection.cursor() as cursor:
-            # Resolve hospital_id from user email
             cursor.execute("""
                 SELECT h.hospital_id
                 FROM hospital_registration_tbl h
@@ -1416,10 +1395,6 @@ def hospital_events_create(request):
 
 
 def hospital_event_donors(request, event_id):
-    """
-    Returns all donors registered (via appointment) for a specific event.
-    GET /api/hospital/events/<event_id>/donors/
-    """
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -1455,7 +1430,6 @@ def hospital_event_donors(request, event_id):
 
 # =============================================================================
 # HOSPITAL STOCK AUDIT LOG
-# GET /api/hospital/stock-log/?email=<hospital_user_email>
 # =============================================================================
 
 def hospital_stock_log(request):
@@ -1540,23 +1514,16 @@ def hospital_stock_log(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-
 # =============================================================================
 # HOSPITAL PATIENT REQUESTS
-# GET  /api/hospital/requests/?email=<hospital_user_email>
-# POST /api/requests/<id>/update-status/  { "status": "Approved"|"Rejected"|"Pending" }
 # =============================================================================
 
 def hospital_requests_list(request):
-    """
-    Returns all blood requests submitted to this hospital.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'error': 'email required'}, status=400)
     try:
         with connection.cursor() as cursor:
-            # Resolve hospital_id
             cursor.execute("""
                 SELECT h.hospital_id
                 FROM hospital_registration_tbl h
@@ -1612,10 +1579,6 @@ def hospital_requests_list(request):
 
 @csrf_exempt
 def update_request_status(request, request_id):
-    """
-    Updates a blood request status to Approved, Rejected, or Pending.
-    POST body: { "status": "Approved" | "Rejected" | "Pending" }
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1634,12 +1597,9 @@ def update_request_status(request, request_id):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @csrf_exempt
 def confirm_transfusion(request):
-    """
-    Updates appointment to 'Transfusion Done', generates an invoice,
-    and sets the blood request to 'Awaiting Payment'.
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1651,37 +1611,32 @@ def confirm_transfusion(request):
             return JsonResponse({'error': 'appointmentId and requestId are required'}, status=400)
 
         with connection.cursor() as cursor:
-            # 1. Update Appointment Status
             cursor.execute(
                 "UPDATE appointment_tbl SET status = 'Transfusion Done' WHERE appointment_id = %s",
                 [appointment_id]
             )
-
-            # 2. Fetch data for Invoice (Donor, Recipient, Blood ID)
             cursor.execute("""
-                SELECT a.donor_id, r.recipient_id, d.blood_id 
+                SELECT a.donor_id, r.recipient_id, d.blood_id
                 FROM appointment_tbl a
                 JOIN donor_tbl d ON a.donor_id = d.donor_id
                 CROSS JOIN blood_request_tbl br
                 JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
                 WHERE a.appointment_id = %s AND br.request_id = %s
             """, [appointment_id, request_id])
-            
+
             row = cursor.fetchone()
             if not row:
                 return JsonResponse({'error': 'Linked records not found'}, status=404)
-            
+
             donor_id, recipient_id, blood_id = row
 
-            # 3. Create Invoice Record
             cursor.execute("""
-                INSERT INTO invoice_no_tbl 
+                INSERT INTO invoice_no_tbl
                 (appointment_id, donor_id, blood_id, blood_received_by, quantity, rate)
                 SELECT %s, %s, %s, full_name, 1, 500.0
                 FROM recipient_tbl WHERE recipient_id = %s
             """, [appointment_id, donor_id, blood_id, recipient_id])
 
-            # 4. Update Blood Request Status
             cursor.execute(
                 "UPDATE blood_request_tbl SET status = 'Awaiting Payment' WHERE request_id = %s",
                 [request_id]
@@ -1690,7 +1645,8 @@ def confirm_transfusion(request):
         return JsonResponse({'message': 'Transfusion confirmed and invoice generated.'}, status=200)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-    
+
+
 def get_hospital_subscription(request):
     email = request.GET.get('email')
     try:
@@ -1703,10 +1659,10 @@ def get_hospital_subscription(request):
                 WHERE u.email = %s
             """, [email])
             row = cursor.fetchone()
-            
+
         if not row:
             return JsonResponse({'error': 'Subscription not found'}, status=404)
-            
+
         return JsonResponse({
             'endDate': row[0].strftime('%Y-%m-%d') if row[0] else 'N/A',
             'status': row[1],
@@ -1715,9 +1671,9 @@ def get_hospital_subscription(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+
 @csrf_exempt
 def renew_hospital_subscription(request):
-    """Adds 30 days to the existing subscription end date."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1725,7 +1681,6 @@ def renew_hospital_subscription(request):
         email = data.get('email')
 
         with connection.cursor() as cursor:
-            # Update by adding 30 days to the current end_date
             cursor.execute("""
                 UPDATE hospital_subscription_tbl s
                 JOIN hospital_registration_tbl h ON s.hospital_id = h.hospital_id
@@ -1734,17 +1689,16 @@ def renew_hospital_subscription(request):
                     s.status = 'Active'
                 WHERE u.email = %s
             """, [email])
-            
+
             if cursor.rowcount == 0:
                 return JsonResponse({'error': 'Hospital subscription not found'}, status=404)
 
         return JsonResponse({'message': 'Subscription renewed for 30 days.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
 def get_hospital_profile(request):
-    """
-    Fetches the hospital's profile details based on the logged-in user's email.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'error': 'email required'}, status=400)
@@ -1757,10 +1711,10 @@ def get_hospital_profile(request):
                 WHERE u.email = %s
             """, [email])
             row = cursor.fetchone()
-            
+
         if not row:
             return JsonResponse({'error': 'Hospital profile not found'}, status=404)
-            
+
         return JsonResponse({
             'hospitalName': row[0],
             'licenseNo': row[1] or 'N/A',
@@ -1769,12 +1723,9 @@ def get_hospital_profile(request):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-    
+
+
 def get_recipient_profile(request):
-    """
-    GET /api/recipient/profile/?email=<email>
-    Returns recipient's contact info and blood type.
-    """
     email = request.GET.get('email')
     if not email:
         return JsonResponse({'error': 'email required'}, status=400)
@@ -1802,11 +1753,6 @@ def get_recipient_profile(request):
 
 @csrf_exempt
 def update_recipient_profile(request):
-    """
-    PUT /api/recipient/profile/update/
-    Body: { email, contactNumber, address }
-    Updates the recipient's mutable fields.
-    """
     if request.method != 'PUT':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
@@ -1830,11 +1776,6 @@ def update_recipient_profile(request):
 
 @csrf_exempt
 def update_hospital_profile(request):
-    """
-    PUT /api/hospital/profile/update/
-    Body: { email, hospitalName, address, city }
-    Updates hospital registration details.
-    """
     if request.method != 'PUT':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
