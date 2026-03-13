@@ -22,12 +22,14 @@ urlpatterns = [
     path('donor/history/', views.donor_history_list, name='donor_history'),
     path('donor/register-event/', views.register_for_event, name='register_event'),
     path('donor/appointments/<int:appointment_id>/cancel/', views.cancel_appointment, name='cancel_appointment'),
-    path('donor/interest/', views.express_donor_interest, name='donor_interest'),
+    # "I Can Donate" button — writes to appointment_tbl so hospital can see the donor
+    path('donor/interest/', views.donor_interest_view, name='donor_interest'),
+
     path('donor/certificate/<int:appointment_id>/', views.get_certificate_data, name='certificate_data'),
     path('donor/notifications/', views.get_donor_notifications, name='donor_notifications'),
     path('donor/eligibility/', views.get_donor_eligibility, name='donor_eligibility'),
 
-    # NEW: fetch which requests this donor has already responded to (DB-backed, port-agnostic)
+    # Returns request IDs donor has already responded to (checks appointment_tbl, port-agnostic)
     path('donor/my-interests/', views.get_donor_interests, name='donor_my_interests'),
 
     # --- HOSPITAL ACTIONS ---

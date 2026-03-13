@@ -1286,7 +1286,7 @@ def hospital_appointment_update(request, appointment_id):
     try:
         data       = json.loads(request.body)
         new_status = data.get('status')
-        if new_status not in ('Confirmed', 'Rejected', 'Screening Failed'):
+        if new_status not in ('Confirmed', 'Rejected', 'Screening Failed', 'Screening Passed'):
             return JsonResponse({'error': 'Invalid status value'}, status=400)
         with connection.cursor() as cursor:
             cursor.execute(
@@ -1804,6 +1804,7 @@ def update_hospital_profile(request):
 
 # =============================================================================
 # DONOR INTEREST LOG — fetch which requests donor has already responded to
+# Reads from appointment_tbl (where donor_interest_view writes)
 # GET /api/donor/my-interests/?email=<email>
 # =============================================================================
 
@@ -1813,15 +1814,29 @@ def get_donor_interests(request):
         return JsonResponse([], safe=False)
     try:
         with connection.cursor() as cursor:
+            # donor_interest_view stores the requestId in health_questionnaire_data
+            # as {"interestedInRequestId": <id>}
             cursor.execute("""
-                SELECT dil.request_id
-                FROM donor_interest_log dil
-                JOIN donor_tbl d ON dil.donor_id = d.donor_id
+                SELECT a.health_questionnaire_data
+                FROM appointment_tbl a
+                JOIN donor_tbl d ON a.donor_id = d.donor_id
                 JOIN user_registration_tbl u ON d.user_id = u.user_id
                 WHERE u.email = %s
+                  AND a.health_questionnaire_data IS NOT NULL
+                  AND a.health_questionnaire_data != '{}'
             """, [email])
             rows = cursor.fetchall()
-        request_ids = [row[0] for row in rows]
+
+        request_ids = []
+        for row in rows:
+            try:
+                data = json.loads(row[0]) if row[0] else {}
+                rid = data.get('interestedInRequestId')
+                if rid is not None:
+                    request_ids.append(int(rid))
+            except Exception:
+                pass
+
         return JsonResponse(request_ids, safe=False)
     except Exception as e:
         return JsonResponse([], safe=False)
