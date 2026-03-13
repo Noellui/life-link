@@ -196,20 +196,21 @@ def donor_dashboard_stats(request):
             b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
             if b_obj:
                 blood_type = b_obj.blood_type
+        DONE = ['Fulfilled', 'Transfusion Done']
         fulfilled_count = (
-            AppointmentTbl.objects.filter(donor=donor, status='Fulfilled').count()
+            AppointmentTbl.objects.filter(donor=donor, status__in=DONE).count()
             if donor else 0
         )
         last_donation = (
             AppointmentTbl.objects
-            .filter(donor=donor, status='Fulfilled')
+            .filter(donor=donor, status__in=DONE)
             .order_by('-appointment_date')
             .first()
         )
         return JsonResponse({
             'stats': {
                 'total':    fulfilled_count,
-                'lives':    fulfilled_count * 3,
+                'lives':    fulfilled_count,
                 'lastDate': (
                     last_donation.appointment_date.strftime('%Y-%m-%d')
                     if last_donation else 'N/A'
@@ -285,7 +286,7 @@ def donor_appointments_list(request):
         latest_app = (
             AppointmentTbl.objects
             .filter(donor=donor)
-            .exclude(status='Fulfilled')
+            .exclude(status__in=['Fulfilled', 'Transfusion Done', 'Screening Failed', 'Rejected'])
             .order_by('-appointment_date')
             .first()
         )
@@ -317,17 +318,35 @@ def donor_history_list(request):
         data  = []
         for h in hist:
             blood_type_name = "Whole Blood"
-            if h.status == 'Fulfilled' and donor and donor.blood_id:
+            if h.status in ('Fulfilled', 'Transfusion Done') and donor and donor.blood_id:
                 b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
                 if b_obj:
                     blood_type_name = f"Whole Blood ({b_obj.blood_type})"
+            # Normalise status label for display
+            display_status = 'Fulfilled' if h.status == 'Transfusion Done' else h.status
+            # Try to get units from linked blood request
+            units = "1"
+            try:
+                import json as _json
+                qdata = h.health_questionnaire_data
+                if isinstance(qdata, str):
+                    qdata = _json.loads(qdata)
+                req_id = qdata.get('interestedInRequestId') if qdata else None
+                if req_id:
+                    with connection.cursor() as cu:
+                        cu.execute("SELECT units FROM blood_request_tbl WHERE request_id = %s", [req_id])
+                        row = cu.fetchone()
+                        if row and row[0]:
+                            units = str(row[0])
+            except Exception:
+                pass
             data.append({
                 'id':           h.appointment_id,
                 'date':         h.appointment_date.strftime('%Y-%m-%d'),
                 'location':     h.hospital.hospital_name if h.hospital else "Unknown Center",
-                'units':        "1",
+                'units':        units,
                 'donationType': blood_type_name,
-                'status':       h.status,
+                'status':       display_status,
             })
         return JsonResponse(data, safe=False)
     except Exception:
@@ -1109,6 +1128,25 @@ def get_recipient_requests(request):
                     interest_count = ic_row[0] if ic_row else 0
             except Exception:
                 pass
+
+            # If blood_request_tbl still says Approved but the linked appointment
+            # is Transfusion Done, reflect the real status
+            if status == 'Approved':
+                try:
+                    with connection.cursor() as c3:
+                        c3.execute("""
+                            SELECT COUNT(*) FROM appointment_tbl a
+                            WHERE a.status = 'Transfusion Done'
+                              AND CAST(
+                                    JSON_UNQUOTE(JSON_EXTRACT(a.health_questionnaire_data,
+                                    '$.interestedInRequestId')) AS UNSIGNED
+                                  ) = %s
+                        """, [req_id])
+                        if c3.fetchone()[0] > 0:
+                            status = 'Awaiting Payment'
+                except Exception:
+                    pass
+
             results.append({
                 'requestId':          req_id,
                 'bloodGroup':         blood_group,
@@ -1154,8 +1192,12 @@ def get_recipient_bills(request):
                 LEFT JOIN appointment_tbl a   ON inv.appointment_id = a.appointment_id
                 LEFT JOIN blood_type_tbl bt   ON inv.blood_id = bt.blood_id
                 LEFT JOIN payment_tbl p       ON p.bill_no = inv.bill_no
-                JOIN donor_tbl d              ON inv.donor_id = d.donor_id
-                JOIN user_registration_tbl u  ON d.user_id = u.user_id
+                -- Look up via recipient, not donor
+                JOIN blood_request_tbl br     ON CAST(
+                    JSON_UNQUOTE(JSON_EXTRACT(a.health_questionnaire_data, '$.interestedInRequestId'))
+                    AS UNSIGNED) = br.request_id
+                JOIN recipient_tbl rec        ON br.recipient_id = rec.recipient_id
+                JOIN user_registration_tbl u  ON rec.user_id = u.user_id
                 WHERE u.email = %s
                 ORDER BY inv.bill_no DESC
             """, [email])
@@ -1249,7 +1291,12 @@ def hospital_appointments_list(request):
                     a.status,
                     u.full_name   AS donor_name,
                     u.email       AS donor_email,
-                    bt.blood_type
+                    bt.blood_type,
+                    CAST(
+                        JSON_UNQUOTE(
+                            JSON_EXTRACT(a.health_questionnaire_data, '$.interestedInRequestId')
+                        ) AS UNSIGNED
+                    ) AS request_id
                 FROM appointment_tbl a
                 JOIN donor_tbl d ON a.donor_id = d.donor_id
                 JOIN user_registration_tbl u ON d.user_id = u.user_id
@@ -1263,7 +1310,7 @@ def hospital_appointments_list(request):
 
         data = []
         for row in rows:
-            appt_id, appt_date, status, donor_name, donor_email, blood_type = row
+            appt_id, appt_date, status, donor_name, donor_email, blood_type, request_id = row
             data.append({
                 'id':          appt_id,
                 'donorName':   donor_name,
@@ -1273,6 +1320,7 @@ def hospital_appointments_list(request):
                 'time':        appt_date.strftime('%I:%M %p') if appt_date else 'N/A',
                 'requestDate': appt_date.strftime('%Y-%m-%d') if appt_date else 'N/A',
                 'status':      status,
+                'requestId':   request_id,
             })
         return JsonResponse(data, safe=False)
     except Exception as e:
@@ -1607,42 +1655,160 @@ def confirm_transfusion(request):
         appointment_id = data.get('appointmentId')
         request_id = data.get('requestId')
 
-        if not appointment_id or not request_id:
-            return JsonResponse({'error': 'appointmentId and requestId are required'}, status=400)
+        if not appointment_id:
+            return JsonResponse({'error': 'appointmentId is required'}, status=400)
 
         with connection.cursor() as cursor:
+            # 1. Mark appointment as Transfusion Done
             cursor.execute(
                 "UPDATE appointment_tbl SET status = 'Transfusion Done' WHERE appointment_id = %s",
                 [appointment_id]
             )
+
+            # If requestId not sent by frontend, try to read it from appointment JSON
+            if not request_id:
+                cursor.execute("""
+                    SELECT CAST(
+                        JSON_UNQUOTE(JSON_EXTRACT(health_questionnaire_data, '$.interestedInRequestId'))
+                    AS UNSIGNED)
+                    FROM appointment_tbl WHERE appointment_id = %s
+                """, [appointment_id])
+                r = cursor.fetchone()
+                if r and r[0]:
+                    request_id = r[0]
+
+            if request_id:
+                # 2. Linked request exists — update blood_request status and create invoice
+
+                # Update blood request to Awaiting Payment
+                cursor.execute(
+                    "UPDATE blood_request_tbl SET status = 'Awaiting Payment' WHERE request_id = %s",
+                    [request_id]
+                )
+
+                # Fetch donor_id, blood_id from appointment, recipient_id from blood request
+                cursor.execute("""
+                    SELECT a.donor_id, d.blood_id, br.recipient_id
+                    FROM appointment_tbl a
+                    JOIN donor_tbl d ON a.donor_id = d.donor_id
+                    JOIN blood_request_tbl br ON br.request_id = %s
+                    WHERE a.appointment_id = %s
+                """, [request_id, appointment_id])
+
+                row = cursor.fetchone()
+                if row:
+                    donor_id, blood_id, recipient_id = row
+                    # Insert invoice if not already exists
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM invoice_no_tbl WHERE appointment_id = %s",
+                        [appointment_id]
+                    )
+                    if cursor.fetchone()[0] == 0:
+                        # Use actual units from blood_request_tbl
+                        cursor.execute(
+                            "SELECT units FROM blood_request_tbl WHERE request_id = %s",
+                            [request_id]
+                        )
+                        units_row = cursor.fetchone()
+                        actual_units = int(units_row[0]) if units_row and units_row[0] else 1
+                        cursor.execute("""
+                            INSERT INTO invoice_no_tbl
+                            (appointment_id, donor_id, blood_id, blood_received_by, mobile_no, quantity, rate)
+                            SELECT %s, %s, %s, u.full_name, COALESCE(u.contact_no, '0000000000'), %s, 500.0
+                            FROM recipient_tbl rec
+                            JOIN user_registration_tbl u ON rec.user_id = u.user_id
+                            WHERE rec.recipient_id = %s
+                        """, [appointment_id, donor_id, blood_id, actual_units, recipient_id])
+            else:
+                # 3. No linked request — donor walked in via "I Can Donate", just add blood to stock
+                cursor.execute("""
+                    INSERT INTO blood_storage_tbl
+                    (appointment_id, blood_id, quantity, expiry_date, status, hospital_id)
+                    SELECT %s, d.blood_id, 1, %s, 'Available', a.hospital_id
+                    FROM appointment_tbl a
+                    JOIN donor_tbl d ON a.donor_id = d.donor_id
+                    WHERE a.appointment_id = %s
+                """, [
+                    appointment_id,
+                    (datetime.date.today() + datetime.timedelta(days=42)).isoformat(),
+                    appointment_id,
+                ])
+
+        return JsonResponse({'message': 'Transfusion confirmed and blood stock updated.'}, status=200)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def backfill_invoice(request):
+    """
+    POST { appointmentId }
+    Re-runs the invoice + blood_request update for a Transfusion Done appointment
+    that was completed before the fix was deployed.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data           = json.loads(request.body)
+        appointment_id = data.get('appointmentId')
+        if not appointment_id:
+            return JsonResponse({'error': 'appointmentId required'}, status=400)
+
+        with connection.cursor() as cursor:
+            # Get requestId from appointment JSON
             cursor.execute("""
-                SELECT a.donor_id, r.recipient_id, d.blood_id
-                FROM appointment_tbl a
-                JOIN donor_tbl d ON a.donor_id = d.donor_id
-                CROSS JOIN blood_request_tbl br
-                JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
-                WHERE a.appointment_id = %s AND br.request_id = %s
-            """, [appointment_id, request_id])
+                SELECT CAST(
+                    JSON_UNQUOTE(JSON_EXTRACT(health_questionnaire_data, '$.interestedInRequestId'))
+                AS UNSIGNED)
+                FROM appointment_tbl WHERE appointment_id = %s
+            """, [appointment_id])
+            r = cursor.fetchone()
+            request_id = r[0] if r and r[0] else None
 
-            row = cursor.fetchone()
-            if not row:
-                return JsonResponse({'error': 'Linked records not found'}, status=404)
+            if not request_id:
+                return JsonResponse({'error': 'No linked blood request found for this appointment'}, status=404)
 
-            donor_id, recipient_id, blood_id = row
-
-            cursor.execute("""
-                INSERT INTO invoice_no_tbl
-                (appointment_id, donor_id, blood_id, blood_received_by, quantity, rate)
-                SELECT %s, %s, %s, full_name, 1, 500.0
-                FROM recipient_tbl WHERE recipient_id = %s
-            """, [appointment_id, donor_id, blood_id, recipient_id])
-
+            # Update blood request status
             cursor.execute(
                 "UPDATE blood_request_tbl SET status = 'Awaiting Payment' WHERE request_id = %s",
                 [request_id]
             )
 
-        return JsonResponse({'message': 'Transfusion confirmed and invoice generated.'}, status=200)
+            # Get donor, blood, recipient
+            cursor.execute("""
+                SELECT a.donor_id, d.blood_id, br.recipient_id, br.units
+                FROM appointment_tbl a
+                JOIN donor_tbl d ON a.donor_id = d.donor_id
+                JOIN blood_request_tbl br ON br.request_id = %s
+                WHERE a.appointment_id = %s
+            """, [request_id, appointment_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Could not find linked records'}, status=404)
+
+            donor_id, blood_id, recipient_id, units = row
+            actual_units = int(units) if units else 1
+
+            # Insert invoice if not already there
+            cursor.execute(
+                "SELECT COUNT(*) FROM invoice_no_tbl WHERE appointment_id = %s",
+                [appointment_id]
+            )
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("""
+                    INSERT INTO invoice_no_tbl
+                    (appointment_id, donor_id, blood_id, blood_received_by, mobile_no, quantity, rate)
+                    SELECT %s, %s, %s, r.full_name, COALESCE(u.contact_no, '0000000000'), %s, 500.0
+                    FROM recipient_tbl rec
+                    JOIN user_registration_tbl u ON rec.user_id = u.user_id
+                    JOIN (SELECT full_name FROM recipient_tbl WHERE recipient_id = %s LIMIT 1) r ON 1=1
+                    WHERE rec.recipient_id = %s
+                    LIMIT 1
+                """, [appointment_id, donor_id, blood_id, actual_units, recipient_id, recipient_id])
+                return JsonResponse({'message': f'Invoice created for appointment {appointment_id}'}, status=200)
+            else:
+                return JsonResponse({'message': 'Invoice already exists'}, status=200)
+
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

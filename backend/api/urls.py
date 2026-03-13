@@ -51,6 +51,7 @@ urlpatterns = [
 
     # Transfusion
     path('hospital/appointments/transfusion/', views.confirm_transfusion, name='confirm_transfusion'),
+    path('hospital/appointments/backfill-invoice/', views.backfill_invoice, name='backfill_invoice'),
 
     # Subscription
     path('hospital/subscription/', views.get_hospital_subscription, name='get_hospital_subscription'),
