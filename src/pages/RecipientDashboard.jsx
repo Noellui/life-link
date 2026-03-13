@@ -20,18 +20,27 @@ const API = {
 // ── Utility helpers ───────────────────────────────────────────────────────────
 
 const statusMeta = {
-  Pending    : { color: '#F59E0B', bg: '#FFFBEB', label: 'Pending'    },
-  Approved   : { color: '#3B82F6', bg: '#EFF6FF', label: 'Approved'   },
-  Processing : { color: '#6366F1', bg: '#EEF2FF', label: 'Processing' },
-  Fulfilled  : { color: '#10B981', bg: '#ECFDF5', label: 'Fulfilled'  },
-  Rejected   : { color: '#EF4444', bg: '#FEF2F2', label: 'Rejected'   },
+  Pending           : { color: '#F59E0B', bg: '#FFFBEB', label: 'Pending'            },
+  Approved          : { color: '#3B82F6', bg: '#EFF6FF', label: 'Approved'           },
+  Processing        : { color: '#6366F1', bg: '#EEF2FF', label: 'Processing'         },
+  Fulfilled         : { color: '#10B981', bg: '#ECFDF5', label: 'Fulfilled'          },
+  Rejected          : { color: '#EF4444', bg: '#FEF2F2', label: 'Rejected'           },
+  'Awaiting Payment': { color: '#F59E0B', bg: '#FFFBEB', label: 'Awaiting Payment'   },
+  'Transfusion Done': { color: '#10B981', bg: '#ECFDF5', label: 'Transfusion Done'   },
+  'Screening Passed': { color: '#6366F1', bg: '#EEF2FF', label: 'Screening Passed'   },
+  'Screening Failed': { color: '#EF4444', bg: '#FEF2F2', label: 'Screening Failed'   },
 };
 
+// Statuses that mean the request is fully done (not active)
+const DONE_STATUSES = new Set([
+  'Fulfilled', 'Rejected', 'Transfusion Done', 'Awaiting Payment',
+]);
+
 const stepIndex = (status) => {
-  if (status === 'Pending')                return 0;
-  if (status === 'Approved')               return 1;
-  if (status === 'Processing')             return 2;
-  if (status === 'Fulfilled')              return 3;
+  if (status === 'Pending')                              return 0;
+  if (status === 'Approved')                             return 1;
+  if (status === 'Processing' || status === 'Screening Passed') return 2;
+  if (status === 'Fulfilled'  || status === 'Transfusion Done' || status === 'Awaiting Payment') return 3;
   return 0;
 };
 
@@ -111,7 +120,12 @@ export default function RecipientDashboard() {
       const res  = await fetch(API.requests(user.email));
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
-        setRequests(data.sort((a, b) => (a.status === 'Fulfilled' ? 1 : -1)));
+        // Sort: active first, then done
+        setRequests(data.sort((a, b) => {
+          const aDone = DONE_STATUSES.has(a.status) ? 1 : 0;
+          const bDone = DONE_STATUSES.has(b.status) ? 1 : 0;
+          return aDone - bDone;
+        }));
       } else {
         setRequests(MOCK_REQUESTS);
       }
@@ -200,12 +214,12 @@ export default function RecipientDashboard() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
-  const activeReqs   = requests.filter(r => r.status !== 'Fulfilled' && r.status !== 'Rejected');
-  const topReq       = activeReqs[0] || null;
+  const activeReqs    = requests.filter(r => !DONE_STATUSES.has(r.status));
+  const topReq        = activeReqs[0] || null;
   const totalInterest = requests.reduce((s, r) => s + (r.donorInterestCount || 0), 0);
-  const completedReqs = requests.filter(r => r.status === 'Fulfilled').length;
-  const unpaidCount  = bills.filter(b => b.paymentStatus === 'Unpaid').length;
-  const unpaidTotal  = bills
+  const completedReqs = requests.filter(r => DONE_STATUSES.has(r.status)).length;
+  const unpaidCount   = bills.filter(b => b.paymentStatus === 'Unpaid').length;
+  const unpaidTotal   = bills
     .filter(b => b.paymentStatus === 'Unpaid')
     .reduce((s, b) => s + b.amount * 1.18, 0);
 
@@ -233,7 +247,8 @@ export default function RecipientDashboard() {
 
         {/* ── TABS ── */}
         <div>
-          <p><br></br></p>        </div>
+          <p><br></br></p>
+        </div>
       </header>
 
       <main style={styles.main}>
@@ -262,15 +277,20 @@ export default function RecipientDashboard() {
                   {topReq ? (
                     <ActiveRequestCard req={topReq} />
                   ) : (
-                    <div style={styles.emptyCard}>
-                      <p style={{ fontSize: 40, marginBottom: 8 }}>🩸</p>
-                      <p style={{ color: '#6B7280', fontWeight: 600, marginBottom: 4 }}>
-                        No active requests
-                      </p>
-                      <Link to="/request-blood" style={styles.linkBtn}>
-                        Create a new blood request →
-                      </Link>
-                    </div>
+                    /* Show last completed request if nothing active */
+                    requests.length > 0 ? (
+                      <CompletedRequestCard req={requests[0]} />
+                    ) : (
+                      <div style={styles.emptyCard}>
+                        <p style={{ fontSize: 40, marginBottom: 8 }}>🩸</p>
+                        <p style={{ color: '#6B7280', fontWeight: 600, marginBottom: 4 }}>
+                          No active requests
+                        </p>
+                        <Link to="/request-blood" style={styles.linkBtn}>
+                          Create a new blood request →
+                        </Link>
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -470,10 +490,77 @@ function StatCard({ icon, label, value, color, pulse = false }) {
   );
 }
 
+// Shown when ALL requests are done — a green "completed" summary card
+function CompletedRequestCard({ req }) {
+  const meta = statusMeta[req.status] || statusMeta.Fulfilled;
+  return (
+    <div style={{
+      ...styles.activeCard,
+      background: 'linear-gradient(135deg, #064E3B 0%, #065F46 100%)',
+    }}>
+      <div style={styles.activeCardHeader}>
+        <div>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.8 }}>
+            Last Request — Completed
+          </span>
+          <h3 style={{ margin: '2px 0 0', fontWeight: 800, fontSize: 18 }}>
+            #{req.requestId} — {req.bloodGroup}
+          </h3>
+        </div>
+        <span style={{
+          background: 'rgba(16,185,129,0.3)',
+          padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 700,
+          border: '1px solid rgba(16,185,129,0.5)',
+        }}>
+          ✓ {meta.label}
+        </span>
+      </div>
+
+      {/* Progress — full bar at 100% */}
+      <div style={styles.progressContainer}>
+        <div style={{ ...styles.progressTrack, position: 'relative', marginBottom: 8 }}>
+          <div style={{ ...styles.progressFill, width: '100%' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          {['Submitted', 'Approved', 'Processing', 'Complete'].map((s, i) => (
+            <div key={s} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: '#10B981',
+                color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 12, fontWeight: 800,
+              }}>
+                ✓
+              </div>
+              <span style={{ fontSize: 10, marginTop: 4, fontWeight: 600 }}>{s}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={styles.activeInfoRow}>
+        <div>
+          <p style={{ fontSize: 11, opacity: 0.7, fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Hospital</p>
+          <p style={{ fontWeight: 700, fontSize: 14 }}>{req.hospitalName}</p>
+          <p style={{ fontSize: 12, opacity: 0.7 }}>{req.hospitalCity}</p>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <p style={{ fontSize: 11, opacity: 0.7, fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Requested</p>
+          <p style={{ fontWeight: 700, fontSize: 14 }}>{req.units} unit{req.units > 1 ? 's' : ''}</p>
+          <p style={{ fontSize: 12, opacity: 0.7 }}>{req.requestDate}</p>
+        </div>
+      </div>
+
+      <div style={{ ...styles.waitingBanner, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>
+        🎉 Your blood request has been fulfilled. Thank you for using LifeLink!
+      </div>
+    </div>
+  );
+}
+
 function ActiveRequestCard({ req }) {
   const step     = stepIndex(req.status);
   const steps    = ['Submitted', 'Approved', 'Processing', 'Complete'];
-  const meta     = statusMeta[req.status] || statusMeta.Pending;
   const progress = (step / (steps.length - 1)) * 100;
 
   return (

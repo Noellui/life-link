@@ -5,7 +5,7 @@ const BASE_URL = 'http://127.0.0.1:8000';
 
 const API = {
   bills: (email) => `${BASE_URL}/api/recipient/bills/?email=${encodeURIComponent(email)}`,
-  pay: `${BASE_URL}/api/mark-bill-paid/`,
+  pay: `${BASE_URL}/api/recipient/bills/pay/`,  // FIXED: was /api/mark-bill-paid/
 };
 
 const fmt = (n) => `₹${Number(n).toLocaleString('en-IN')}`;
@@ -79,10 +79,10 @@ export default function MyBills() {
     const amountWithGST = Math.round(bill.amount * 1.18 * 100);
 
     const options = {
-      key: 'rzp_test_SQPi7UmKIOJJal', // Replace with your actual Razorpay Key ID
+      key: 'rzp_test_SQPi7UmKIOJJal',
       amount: amountWithGST,
       currency: 'INR',
-      name: 'Whisper Wire',
+      name: 'LifeLink',
       description: `Payment for Blood Unit (Bill #${bill.billNo})`,
       handler: async function (response) {
         // Optimistic UI — mark paid immediately
@@ -92,31 +92,34 @@ export default function MyBills() {
             : b
         ));
 
-        // Force Navbar badge to update
         window.dispatchEvent(new Event('storage'));
-        setPayModal(true); // Show success modal
+        setPayModal(true);
 
         try {
-          await fetch(API.pay, {
+          const res = await fetch(API.pay, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               billNo: bill.billNo,
               email: user.email,
               paymentMode: 'Online',
-              razorpayPaymentId: response.razorpay_payment_id
+              razorpayPaymentId: response.razorpay_payment_id,
             }),
           });
+          if (!res.ok) {
+            const err = await res.json();
+            console.error('Payment backend error:', err);
+          }
         } catch (err) {
           console.error('Payment confirmation error on backend:', err);
         }
       },
       prefill: {
         email: user.email,
-        contact: bill.mobileNo !== 'N/A' ? bill.mobileNo : ''
+        contact: bill.mobileNo !== 'N/A' ? bill.mobileNo : '',
       },
       theme: {
-        color: '#DC2626', // Whisper Wire red theme
+        color: '#DC2626',
       },
     };
 
@@ -126,6 +129,15 @@ export default function MyBills() {
 
   const closePayModal = () => {
     setPayModal(false);
+    // Refetch bills after closing modal to sync with DB
+    if (user.email) {
+      setBillsLoading(true);
+      fetch(API.bills(user.email))
+        .then(r => r.json())
+        .then(data => setBills(Array.isArray(data) ? data : []))
+        .catch(() => {})
+        .finally(() => setBillsLoading(false));
+    }
   };
 
   // ── Derived Data ───────────────────────────────────────────────────────────
@@ -318,9 +330,9 @@ const styles = {
 };
 
 /* Inject keyframe animations once */
-if (typeof document !== 'undefined' && !document.getElementById('rd-keyframes')) {
+if (typeof document !== 'undefined' && !document.getElementById('bills-keyframes')) {
   const el = document.createElement('style');
-  el.id = 'rd-keyframes';
+  el.id = 'bills-keyframes';
   el.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
     @keyframes spin { to { transform: rotate(360deg); } }
