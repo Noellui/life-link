@@ -1,13 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
-// ============================================================
-// Features added to DonorDashboard:
-//   Feature 3 — "I Can Donate" now calls the backend API and
-//               tracks which requests the donor has responded to.
-//   Feature 5 — Eligibility Countdown with 56-day blood donation rule.
-// ============================================================
-
 const DonorDashboard = () => {
   const navigate = useNavigate();
 
@@ -24,13 +17,10 @@ const DonorDashboard = () => {
   const [myAppointment, setMyAppointment] = useState(null);
   const [donationHistory, setDonationHistory] = useState([]);
 
-  // Feature 3 – track interested request IDs in state
-  const [interestedIds, setInterestedIds] = useState(
-    () => JSON.parse(localStorage.getItem('interested_request_ids') || '[]')
-  );
-  const [interestLoading, setInterestLoading] = useState(null); // holds the requestId being submitted
+  // Loaded from DB on mount so all ports/browsers stay in sync
+  const [interestedIds, setInterestedIds] = useState([]);
+  const [interestLoading, setInterestLoading] = useState(null);
 
-  // Feature 5 – eligibility countdown
   const [eligibility, setEligibility] = useState({
     eligible: true,
     daysRemaining: 0,
@@ -42,7 +32,6 @@ const DonorDashboard = () => {
     return s ? JSON.parse(s) : null;
   };
 
-  // Extracted so it can be called independently after interest is expressed
   const fetchAppointments = async (email) => {
     const appRes = await fetch(`http://127.0.0.1:8000/api/donor/appointments/?email=${email}`);
     if (appRes.ok) {
@@ -61,7 +50,6 @@ const DonorDashboard = () => {
       const email = loggedInUser.email;
 
       try {
-        // 1. Stats
         const statsRes = await fetch(`http://127.0.0.1:8000/api/donor/stats/?email=${email}`);
         if (statsRes.ok) {
           const data = await statsRes.json();
@@ -75,20 +63,23 @@ const DonorDashboard = () => {
           });
         }
 
-        // 2. Urgent requests — now correctly passes email for city-based filtering
         const reqRes = await fetch(`http://127.0.0.1:8000/api/donor/requests/?email=${email}`);
         if (reqRes.ok) setNearbyRequests(await reqRes.json());
 
-        // 3. Upcoming appointment
         await fetchAppointments(email);
 
-        // 4. Full history
         const histRes = await fetch(`http://127.0.0.1:8000/api/donor/history/?email=${email}`);
         if (histRes.ok) setDonationHistory(await histRes.json());
 
-        // Feature 5 — Eligibility check
         const eligRes = await fetch(`http://127.0.0.1:8000/api/donor/eligibility/?email=${email}`);
         if (eligRes.ok) setEligibility(await eligRes.json());
+
+        // Load already-responded request IDs from DB — synced across all ports/browsers
+        const interestsRes = await fetch(`http://127.0.0.1:8000/api/donor/my-interests/?email=${email}`);
+        if (interestsRes.ok) {
+          const ids = await interestsRes.json();
+          setInterestedIds(ids);
+        }
 
       } catch (err) {
         console.error('Dashboard Connection Error:', err);
@@ -98,7 +89,7 @@ const DonorDashboard = () => {
     fetchDashboardData();
   }, [navigate]);
 
-  // --- Feature 3: Handle "I Can Donate" ---
+  // --- FIXED: Handle "I Can Donate" — no fake success on failure ---
   const handleDonateClick = async (req) => {
     const loggedInUser = getLoggedInUser();
     if (!loggedInUser?.email) return navigate('/login');
@@ -111,24 +102,28 @@ const DonorDashboard = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, requestId: req.id }),
       });
+
       const data = await res.json();
+
+      if (!res.ok) {
+        // Server responded with an error (4xx/5xx)
+        alert(`❌ Could not register interest: ${data.error || 'Server error. Please try again.'}`);
+        return;
+      }
+
+      // Only mark as responded if backend confirmed success
       alert(`✅ ${data.message}`);
-
       const updated = [...new Set([...interestedIds, req.id])];
       setInterestedIds(updated);
-      localStorage.setItem('interested_request_ids', JSON.stringify(updated));
+      // No localStorage needed — DB is the source of truth
 
-      // Refresh appointment state so the new appointment appears immediately
       await fetchAppointments(email);
-    } catch {
-      // Fallback: mark locally anyway
-      const updated = [...new Set([...interestedIds, req.id])];
-      setInterestedIds(updated);
-      localStorage.setItem('interested_request_ids', JSON.stringify(updated));
-      alert(`✅ Your interest has been noted! The hospital will follow up.`);
 
-      // Still attempt appointment refresh on fallback
-      await fetchAppointments(email).catch(() => {});
+    } catch (err) {
+      // Network/connection error — Django is likely not running
+      console.error('Interest submission failed:', err);
+      alert('❌ Could not connect to the server. Please make sure the Django server is running and try again.');
+      // Do NOT mark as responded — nothing was saved in the DB
     } finally {
       setInterestLoading(null);
     }
@@ -147,9 +142,6 @@ const DonorDashboard = () => {
     } catch (err) { console.error(err); }
   };
 
-  // ============================================================
-  // Feature 5 — Eligibility Countdown Widget
-  // ============================================================
   const EligibilityCard = () => {
     const { eligible, daysRemaining, nextEligibleDate, lastDonation } = eligibility;
     const progressPct = eligible ? 100 : Math.round(((56 - daysRemaining) / 56) * 100);
@@ -267,7 +259,7 @@ const DonorDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
           <div className="lg:col-span-2 space-y-8">
-            {/* URGENT REQUESTS with Feature 3 */}
+            {/* URGENT REQUESTS */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
                 <span className="relative flex h-3 w-3">
@@ -384,8 +376,6 @@ const DonorDashboard = () => {
 
           {/* RIGHT SIDEBAR */}
           <div className="space-y-6">
-
-            {/* Feature 5: Eligibility Card */}
             <EligibilityCard />
             {myAppointment ? (
               <div className={`rounded-xl shadow-md border overflow-hidden ${
@@ -498,7 +488,7 @@ const printCertificate = (record, userName) => {
   const issueDate = new Date().toLocaleDateString('en-GB');
 
   const printWindow = window.open('', '_blank');
-  
+
   const htmlContent = `
     <!DOCTYPE html>
     <html lang="en">
@@ -506,10 +496,7 @@ const printCertificate = (record, userName) => {
         <meta charset="UTF-8">
         <title>LifeLink Certificate - ${donorName}</title>
         <style>
-            @page {
-                size: A4 landscape;
-                margin: 0; 
-            }
+            @page { size: A4 landscape; margin: 0; }
             body {
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
@@ -521,196 +508,45 @@ const printCertificate = (record, userName) => {
                 font-family: 'Helvetica', Arial, sans-serif;
                 background-color: #fff;
             }
-
             :root {
                 --brand-red: #8c0000;
                 --text-dark: #282828;
                 --text-gray: #646464;
                 --border-light: #969696;
             }
-
-            .certificate {
-                width: 297mm;
-                height: 210mm;
-                background: white;
-                position: relative;
-                display: flex;
-                flex-direction: column;
-                overflow: hidden;
-                box-sizing: border-box;
-            }
-
-            .header-bar {
-                background-color: var(--brand-red);
-                height: 25mm;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: white;
-                font-size: 24pt;
-                font-weight: bold;
-            }
-
-            .frame {
-                margin: 5mm;
-                flex-grow: 1;
-                border: 2mm solid var(--brand-red);
-                position: relative;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                padding: 10mm;
-                box-sizing: border-box;
-            }
-
-            .watermark {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%) rotate(-45deg);
-                font-size: 80pt;
-                font-weight: 900;
-                color: rgba(0, 0, 0, 0.03);
-                z-index: 0;
-                white-space: nowrap;
-                pointer-events: none;
-            }
-
-            .content {
-                z-index: 1;
-                text-align: center;
-                width: 100%;
-            }
-
-            h1 {
-                font-family: 'Times New Roman', serif;
-                font-size: 36pt;
-                margin: 10mm 0 5mm 0;
-                color: var(--text-dark);
-            }
-
-            .subtitle {
-                font-size: 16pt;
-                color: var(--text-gray);
-                margin-bottom: 8mm;
-            }
-
-            .donor-name {
-                font-family: 'Times New Roman', serif;
-                font-style: italic;
-                font-size: 52pt;
-                color: var(--brand-red);
-                margin-bottom: 8mm;
-                border-bottom: 1px solid var(--brand-red);
-                display: inline-block;
-                padding: 0 20mm;
-            }
-
-            .details {
-                font-size: 14pt;
-                line-height: 1.6;
-                color: var(--text-gray);
-            }
-
-            .bottom-row {
-                margin-top: auto;
-                width: 100%;
-                display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
-                align-items: end;
-                padding-bottom: 10mm;
-            }
-
-            .meta-data {
-                text-align: left;
-                font-size: 10pt;
-                color: var(--text-gray);
-            }
-
-            .seal {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .seal-circle {
-                width: 30mm;
-                height: 30mm;
-                border: 0.5mm solid var(--brand-red);
-                border-radius: 50%;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                font-size: 8pt;
-                font-weight: bold;
-                color: var(--brand-red);
-            }
-
-            .signature {
-                text-align: center;
-            }
-
-            .sig-line {
-                border-top: 0.5mm solid var(--border-light);
-                margin-bottom: 2mm;
-                width: 60mm;
-                margin-left: auto;
-            }
-
-            .sig-text {
-                font-size: 10pt;
-                font-weight: bold;
-            }
-
-            .sig-subtext {
-                font-size: 9pt;
-                font-style: italic;
-                color: var(--text-gray);
-            }
-
-            .footer-note {
-                font-size: 8pt;
-                color: var(--border-light);
-                position: absolute;
-                bottom: 2mm;
-                width: 100%;
-                text-align: center;
-            }
+            .certificate { width: 297mm; height: 210mm; background: white; position: relative; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+            .header-bar { background-color: var(--brand-red); height: 25mm; display: flex; align-items: center; justify-content: center; color: white; font-size: 24pt; font-weight: bold; }
+            .frame { margin: 5mm; flex-grow: 1; border: 2mm solid var(--brand-red); position: relative; display: flex; flex-direction: column; align-items: center; padding: 10mm; box-sizing: border-box; }
+            .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80pt; font-weight: 900; color: rgba(0,0,0,0.03); z-index: 0; white-space: nowrap; pointer-events: none; }
+            .content { z-index: 1; text-align: center; width: 100%; }
+            h1 { font-family: 'Times New Roman', serif; font-size: 36pt; margin: 10mm 0 5mm 0; color: var(--text-dark); }
+            .subtitle { font-size: 16pt; color: var(--text-gray); margin-bottom: 8mm; }
+            .donor-name { font-family: 'Times New Roman', serif; font-style: italic; font-size: 52pt; color: var(--brand-red); margin-bottom: 8mm; border-bottom: 1px solid var(--brand-red); display: inline-block; padding: 0 20mm; }
+            .details { font-size: 14pt; line-height: 1.6; color: var(--text-gray); }
+            .bottom-row { margin-top: auto; width: 100%; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; padding-bottom: 10mm; }
+            .meta-data { text-align: left; font-size: 10pt; color: var(--text-gray); }
+            .seal { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+            .seal-circle { width: 30mm; height: 30mm; border: 0.5mm solid var(--brand-red); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 8pt; font-weight: bold; color: var(--brand-red); }
+            .sig-line { border-top: 0.5mm solid var(--border-light); margin-bottom: 2mm; width: 60mm; margin-left: auto; }
+            .sig-text { font-size: 10pt; font-weight: bold; }
+            .sig-subtext { font-size: 9pt; font-style: italic; color: var(--text-gray); }
+            .footer-note { font-size: 8pt; color: var(--border-light); position: absolute; bottom: 2mm; width: 100%; text-align: center; }
         </style>
     </head>
     <body>
         <div class="certificate">
             <div class="header-bar">LifeLink National Blood Service</div>
-            
             <div class="frame">
                 <div class="watermark">LIFELINK</div>
-                
                 <div class="content">
                     <h1>CERTIFICATE OF APPRECIATION</h1>
                     <p class="subtitle">This record of honor is proudly presented to</p>
                     <div class="donor-name">${donorName}</div>
-                    
-                    <div class="details">
-                        For the heroic act of donating — Blood on ${donationDate}.<br>
-                        Recorded at ${hospital}.
-                    </div>
+                    <div class="details">For the heroic act of donating — Blood on ${donationDate}.<br>Recorded at ${hospital}.</div>
                 </div>
-
                 <div class="bottom-row">
-                    <div class="meta-data">
-                        Issued: ${issueDate}<br>
-                        Cert ID: ${certId}
-                    </div>
-
-                    <div class="seal">
-                        <div class="seal-circle">
-                            <span>OFFICIAL</span>
-                            <span>VERIFIED</span>
-                        </div>
-                    </div>
-
+                    <div class="meta-data">Issued: ${issueDate}<br>Cert ID: ${certId}</div>
+                    <div class="seal"><div class="seal-circle"><span>OFFICIAL</span><span>VERIFIED</span></div></div>
                     <div class="signature">
                         <div class="sig-line"></div>
                         <div class="sig-text">Director of Operations</div>
@@ -718,17 +554,9 @@ const printCertificate = (record, userName) => {
                     </div>
                 </div>
             </div>
-
-            <div class="footer-note">
-                This is a computer-generated document. No physical signature is required for validity.
-            </div>
+            <div class="footer-note">This is a computer-generated document. No physical signature is required for validity.</div>
         </div>
-
-        <script>
-            window.onload = function() {
-                window.print();
-            };
-        </script>
+        <script>window.onload = function() { window.print(); };</script>
     </body>
     </html>
   `;

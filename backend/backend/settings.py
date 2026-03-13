@@ -96,6 +96,9 @@ STATIC_URL = 'static/'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000", 
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
 ]
 
 # Allow basic login credentials/cookies to be sent

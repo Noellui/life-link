@@ -606,7 +606,7 @@ def get_donor_notifications(request):
                 )
                 JOIN user_registration_tbl u ON d.user_id = u.user_id
                 WHERE u.email = %s
-                  AND br.status = 'Pending'
+                  AND br.status = 'Approved'
                   AND br.urgency IN ('Critical', 'High')
                 LIMIT 3
             """, [email])
@@ -1800,3 +1800,28 @@ def update_hospital_profile(request):
         return JsonResponse({'message': 'Hospital profile updated successfully.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# =============================================================================
+# DONOR INTEREST LOG — fetch which requests donor has already responded to
+# GET /api/donor/my-interests/?email=<email>
+# =============================================================================
+
+def get_donor_interests(request):
+    email = request.GET.get('email')
+    if not email:
+        return JsonResponse([], safe=False)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT dil.request_id
+                FROM donor_interest_log dil
+                JOIN donor_tbl d ON dil.donor_id = d.donor_id
+                JOIN user_registration_tbl u ON d.user_id = u.user_id
+                WHERE u.email = %s
+            """, [email])
+            rows = cursor.fetchall()
+        request_ids = [row[0] for row in rows]
+        return JsonResponse(request_ids, safe=False)
+    except Exception as e:
+        return JsonResponse([], safe=False)

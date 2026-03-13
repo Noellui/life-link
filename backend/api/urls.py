@@ -27,16 +27,19 @@ urlpatterns = [
     path('donor/notifications/', views.get_donor_notifications, name='donor_notifications'),
     path('donor/eligibility/', views.get_donor_eligibility, name='donor_eligibility'),
 
+    # NEW: fetch which requests this donor has already responded to (DB-backed, port-agnostic)
+    path('donor/my-interests/', views.get_donor_interests, name='donor_my_interests'),
+
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),
     path('appointments/<int:appointment_id>/fulfill/', views.fulfill_appointment_view, name='fulfill_appointment'),
 
-    # --- HOSPITAL APPOINTMENTS (NEW BACKEND-CONNECTED ROUTES) ---
+    # --- HOSPITAL APPOINTMENTS ---
     path('hospital/appointments/', views.hospital_appointments_list, name='hospital_appointments_list'),
     path('hospital/appointments/<int:appointment_id>/update/', views.hospital_appointment_update, name='hospital_appointment_update'),
     path('hospital/appointments/<int:appointment_id>/fulfill/', views.fulfill_appointment_view, name='hospital_fulfill_appointment'),
 
-    # --- HOSPITAL EVENTS (NEW BACKEND-CONNECTED ROUTES) ---
+    # --- HOSPITAL EVENTS ---
     path('hospital/events/', views.hospital_events_list, name='hospital_events_list'),
     path('hospital/events/create/', views.hospital_events_create, name='hospital_events_create'),
     path('hospital/events/<int:event_id>/donors/', views.hospital_event_donors, name='hospital_event_donors'),
@@ -44,9 +47,8 @@ urlpatterns = [
     path('hospital/requests/', views.hospital_requests_list, name='hospital_requests_list'),
     path('requests/<int:request_id>/update-status/', views.update_request_status, name='update_request_status'),
 
-     # Transfusion
+    # Transfusion
     path('hospital/appointments/transfusion/', views.confirm_transfusion, name='confirm_transfusion'),
-
 
     # Subscription
     path('hospital/subscription/', views.get_hospital_subscription, name='get_hospital_subscription'),
@@ -63,17 +65,16 @@ urlpatterns = [
     path('recipient/bills/', views.get_recipient_bills, name='recipient_bills'),
     path('recipient/bills/pay/', views.mark_bill_paid, name='mark_bill_paid'),
 
-    # 1. Hospital Profile Route
+    # Hospital Profile
     path('api/hospital/profile/', views.get_hospital_profile, name='hospital_profile'),
-    
-    # 2. Make sure you also have the subscription routes from earlier!
     path('api/hospital/subscription/', views.get_hospital_subscription, name='hospital_subscription'),
     path('api/hospital/subscription/renew/', views.renew_hospital_subscription, name='hospital_subscription_renew'),
 
-    # Recipient profile (GET + UPDATE)
+    # Recipient profile
     path('recipient/profile/', views.get_recipient_profile, name='recipient_profile'),
     path('recipient/profile/update/', views.update_recipient_profile, name='update_recipient_profile'),
 
     # Hospital profile update
     path('hospital/profile/update/', views.update_hospital_profile, name='update_hospital_profile'),
+    path('hospital/profile/', views.get_hospital_profile, name='get_hospital_profile'),
 ]
