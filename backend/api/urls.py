@@ -31,6 +31,7 @@ urlpatterns = [
 
     # Returns request IDs donor has already responded to (checks appointment_tbl, port-agnostic)
     path('donor/my-interests/', views.get_donor_interests, name='donor_my_interests'),
+    path('hospitals/by-city/', views.get_hospitals_by_city, name='hospitals_by_city'),
 
     # --- HOSPITAL ACTIONS ---
     path('events/', views.event_list, name='event_list'),

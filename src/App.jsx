@@ -28,30 +28,33 @@ import MyBills from './pages/MyBills';
 import RecipientProfile from './pages/RecipientProfile';
 import HospitalProfile from './pages/HospitalProfile';
 
+// ✅ Single key used everywhere for localStorage
+export const USER_STORAGE_KEY = 'lifeLinkUser';
+
 function App() {
   // --- AUTH STATE MANAGEMENT ---
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('lifeLinkUser'); 
-    return savedUser ? JSON.parse(savedUser) : null;
+    const saved = localStorage.getItem(USER_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
   });
 
-  // --- LOGIN HANDLER ---
+  // --- LOGIN HANDLER — single source of truth for localStorage ---
   const handleLogin = (userData) => {
     setUser(userData);
-    localStorage.setItem('lifeLinkUser', JSON.stringify(userData));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
   };
 
-  // --- LOGOUT HANDLER ---
+  // --- LOGOUT HANDLER — clears both keys in case of legacy user_data key ---
   const handleLogout = () => {
-    setUser(null); 
-    localStorage.removeItem('lifeLinkUser'); 
+    setUser(null);
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem('user_data'); // clean up legacy key
   };
 
   return (
     <Router>
       <div className="min-h-screen bg-gray-50 flex flex-col">
         
-        {/* Navbar handles its own visibility based on user role */}
         <Navbar user={user} onLogout={handleLogout} />
         
         <Routes>

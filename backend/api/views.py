@@ -33,6 +33,7 @@ def login_view(request):
             ).first()
             if not user:
                 return JsonResponse({'error': 'User not found'}, status=404)
+
             if user.password == data.get('password'):
                 return JsonResponse({
                     'message': 'Login successful',
@@ -660,7 +661,7 @@ def get_donor_eligibility(request):
                 FROM appointment_tbl a
                 JOIN donor_tbl d ON a.donor_id = d.donor_id
                 JOIN user_registration_tbl u ON d.user_id = u.user_id
-                WHERE u.email = %s AND a.status = 'Fulfilled'
+                WHERE u.email = %s AND a.status IN ('Fulfilled', 'Transfusion Done')
             """, [email])
             row = cursor.fetchone()
         last_donation = row[0] if row and row[0] else None
@@ -896,6 +897,27 @@ def delete_user(request, user_id):
 # =============================================================================
 # HOSPITAL: get hospital_id for a logged-in hospital user
 # =============================================================================
+
+def get_hospitals_by_city(request):
+    """Return all registered hospitals in the donor's city."""
+    city = request.GET.get('city', '').strip()
+    if not city:
+        return JsonResponse({'error': 'city parameter required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT h.hospital_id, h.hospital_name, h.city
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE LOWER(h.city) = LOWER(%s)
+                ORDER BY h.hospital_name
+            """, [city])
+            rows = cursor.fetchall()
+        hospitals = [{'id': r[0], 'name': r[1], 'city': r[2]} for r in rows]
+        return JsonResponse(hospitals, safe=False)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 def get_hospital_id(request):
     email = request.GET.get('email')
@@ -1265,6 +1287,29 @@ def mark_bill_paid(request):
                 (recipient_id, bill_no, amount, payment_date, status, mode)
                 VALUES (%s, %s, %s, %s, 'Paid', %s)
             """, [recipient_id, bill_no, amount, timezone.now(), mode])
+            
+            # Update the linked blood request status to 'Fulfilled'
+            cursor.execute("""
+                SELECT appointment_id FROM invoice_no_tbl WHERE bill_no = %s
+            """, [bill_no])
+            apt_row = cursor.fetchone()
+            if apt_row and apt_row[0]:
+                appointment_id = apt_row[0]
+                cursor.execute("""
+                    SELECT CAST(
+                        JSON_UNQUOTE(JSON_EXTRACT(health_questionnaire_data, '$.interestedInRequestId'))
+                    AS UNSIGNED)
+                    FROM appointment_tbl WHERE appointment_id = %s
+                """, [appointment_id])
+                r = cursor.fetchone()
+                request_id = r[0] if (r and r[0]) else None
+                
+                if request_id:
+                    cursor.execute(
+                        "UPDATE blood_request_tbl SET status = 'Fulfilled' WHERE request_id = %s",
+                        [request_id]
+                    )
+                    
         return JsonResponse({
             'message': 'Payment recorded successfully!',
             'amount':  amount,
@@ -1871,7 +1916,7 @@ def get_hospital_profile(request):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT h.hospital_name, h.license_no, h.address, h.city
+                SELECT h.hospital_name, h.license_no, h.address, h.city, u.password
                 FROM hospital_registration_tbl h
                 JOIN user_registration_tbl u ON h.user_id = u.user_id
                 WHERE u.email = %s
@@ -1885,7 +1930,8 @@ def get_hospital_profile(request):
             'hospitalName': row[0],
             'licenseNo': row[1] or 'N/A',
             'address': row[2],
-            'city': row[3]
+            'city': row[3],
+            'password': row[4] or ''
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -1898,7 +1944,8 @@ def get_recipient_profile(request):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT r.full_name, r.contact_number, r.address, bt.blood_type
+                SELECT r.full_name, r.contact_number, r.address, bt.blood_type,
+                       r.dob, r.weight, r.gender, r.city, u.password
                 FROM recipient_tbl r
                 JOIN user_registration_tbl u ON r.user_id = u.user_id
                 LEFT JOIN blood_type_tbl bt  ON r.blood_id = bt.blood_id
@@ -1912,6 +1959,11 @@ def get_recipient_profile(request):
             'contactNumber': row[1] or '',
             'address':       row[2] or '',
             'bloodType':     row[3] or '',
+            'dob':           row[4].strftime('%Y-%m-%d') if row[4] else '',
+            'weight':        row[5] or '',
+            'gender':        row[6] or '',
+            'city':          row[7] or '',
+            'password':      row[8] or '',
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -1924,17 +1976,31 @@ def update_recipient_profile(request):
     try:
         data    = json.loads(request.body)
         email   = data.get('email')
-        contact = data.get('contactNumber', '')
-        address = data.get('address', '')
+        contact  = data.get('contactNumber', '')
+        address  = data.get('address', '')
+        password = data.get('password')
+        dob      = data.get('dob')
+        weight   = data.get('weight')
+        gender   = data.get('gender')
+        city     = data.get('city')
+
         if not email:
             return JsonResponse({'error': 'email required'}, status=400)
+            
         with connection.cursor() as cursor:
+            if password:
+                cursor.execute("""
+                    UPDATE user_registration_tbl
+                    SET password = %s
+                    WHERE email = %s
+                """, [password, email])
+                
             cursor.execute("""
                 UPDATE recipient_tbl r
                 JOIN user_registration_tbl u ON r.user_id = u.user_id
-                SET r.contact_number = %s, r.address = %s
+                SET r.contact_number = %s, r.address = %s, r.dob = %s, r.weight = %s, r.gender = %s, r.city = %s
                 WHERE u.email = %s
-            """, [contact, address, email])
+            """, [contact, address, dob, weight, gender, city, email])
         return JsonResponse({'message': 'Profile updated successfully.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -1945,11 +2011,18 @@ def update_hospital_profile(request):
     if request.method != 'PUT':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
-        data  = json.loads(request.body)
-        email = data.get('email')
+        data     = json.loads(request.body)
+        email    = data.get('email')
+        password = data.get('password')
         if not email:
             return JsonResponse({'error': 'email required'}, status=400)
         with connection.cursor() as cursor:
+            if password:
+                cursor.execute("""
+                    UPDATE user_registration_tbl
+                    SET password = %s
+                    WHERE email = %s
+                """, [password, email])
             cursor.execute("""
                 UPDATE hospital_registration_tbl h
                 JOIN user_registration_tbl u ON h.user_id = u.user_id

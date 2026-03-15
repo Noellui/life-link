@@ -294,28 +294,52 @@ export default function RecipientDashboard() {
                   )}
                 </div>
 
-                {/* ── RIGHT: REQUEST HISTORY ── */}
-                <div style={styles.historyCard}>
-                  <div style={styles.historyHeader}>
-                    <span style={{ fontWeight: 700, color: '#111827' }}>Request History</span>
-                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-                      {requests.length} total
-                    </span>
+                {/* ── RIGHT SIDEBAR ── */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24, width: 320, flexShrink: 0 }}>
+                  <div style={{ ...styles.historyCard, width: '100%' }}>
+                    <div style={styles.historyHeader}>
+                      <span style={{ fontWeight: 700, color: '#111827' }}>Request History</span>
+                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>
+                        {requests.length} total
+                      </span>
+                    </div>
+                    <div>
+                      {requests.map(req => (
+                        <HistoryRow key={req.requestId} req={req} />
+                      ))}
+                      {requests.length === 0 && (
+                        <p style={{ padding: '24px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
+                          No history yet.
+                        </p>
+                      )}
+                    </div>
+                    <div style={styles.historyFooter}>
+                      <Link to="/my-requests" style={styles.linkSmall}>
+                        View all history →
+                      </Link>
+                    </div>
                   </div>
-                  <div>
-                    {requests.map(req => (
-                      <HistoryRow key={req.requestId} req={req} />
-                    ))}
-                    {requests.length === 0 && (
-                      <p style={{ padding: '24px', textAlign: 'center', color: '#9CA3AF', fontSize: 14 }}>
-                        No history yet.
-                      </p>
-                    )}
-                  </div>
-                  <div style={styles.historyFooter}>
-                    <Link to="/my-requests" style={styles.linkSmall}>
-                      View all history →
-                    </Link>
+
+                  {/* QUICK ACTIONS */}
+                  <div style={{ ...styles.historyCard, width: '100%' }}>
+                    <div style={styles.historyHeader}>
+                      <span style={{ fontWeight: 700, color: '#111827' }}>Quick Actions</span>
+                    </div>
+                    <div style={{ padding: '20px' }}>
+                      <Link 
+                        to="/recipient-profile" 
+                        style={{
+                          display: 'block', padding: '12px', borderRadius: '8px', 
+                          border: '1px solid #E5E7EB', textDecoration: 'none', 
+                          color: '#374151', fontWeight: 600, textAlign: 'center',
+                          transition: 'all 0.2s', backgroundColor: 'transparent'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#DC2626'; e.currentTarget.style.backgroundColor = '#FEF2F2'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E7EB'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        Update Profile
+                      </Link>
+                    </div>
                   </div>
                 </div>
 

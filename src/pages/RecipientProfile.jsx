@@ -11,10 +11,16 @@ const RecipientProfile = () => {
     address: '',
     email: '',
     bloodType: '',
+    password: '',
+    dob: '',
+    city: '',
+    weight: '',
+    gender: '',
   });
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState(''); // 'success' | 'error' | ''
+  const [saveMsg, setSaveMsg] = useState(''); // 'success' | 'error' | 'pwdMismatch'
 
   const getStoredUser = () =>
     JSON.parse(localStorage.getItem('user_data') || 'null') ||
@@ -40,6 +46,11 @@ const RecipientProfile = () => {
             address:       data.address       || '',
             email:         stored.email,
             bloodType:     data.bloodType     || '',
+            password:      data.password      || '',
+            dob:           data.dob           || '',
+            city:          data.city          || '',
+            weight:        data.weight        || '',
+            gender:        data.gender        || '',
           });
         } else {
           // fallback to localStorage info
@@ -71,6 +82,10 @@ const RecipientProfile = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (profile.password && profile.password !== confirmPassword) {
+      setSaveMsg('pwdMismatch');
+      return;
+    }
     setSaving(true);
     setSaveMsg('');
 
@@ -82,6 +97,11 @@ const RecipientProfile = () => {
           email:         profile.email,
           contactNumber: profile.contactNumber,
           address:       profile.address,
+          password:      profile.password,
+          dob:           profile.dob,
+          city:          profile.city,
+          weight:        profile.weight,
+          gender:        profile.gender,
         }),
       });
 
@@ -116,150 +136,95 @@ const RecipientProfile = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ── PAGE HEADER ── */}
-      <div className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-3xl mx-auto px-6 py-6">
-          <div className="flex items-center gap-4">
-            {/* Avatar circle with initials */}
-            <div className="w-14 h-14 rounded-full bg-red-600 flex items-center justify-center text-white text-xl font-black shadow-md select-none">
-              {profile.fullName ? profile.fullName.charAt(0).toUpperCase() : '?'}
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{profile.fullName || 'My Profile'}</h1>
-              <p className="text-sm text-gray-500 mt-0.5">
-                {profile.email}
-                {profile.bloodType && (
-                  <span className="ml-2 px-2 py-0.5 bg-red-50 text-red-600 rounded-full text-xs font-bold">
-                    🩸 {profile.bloodType}
-                  </span>
-                )}
-              </p>
-            </div>
+    <div className="min-h-screen bg-gray-50 py-10 px-4">
+      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        
+        <div className="bg-gray-900 px-8 py-6 flex justify-between items-center text-white">
+          <div>
+            <h1 className="text-2xl font-bold">Edit Profile ✏️</h1>
+            <p className="opacity-80 text-sm mt-1">Update your info in the LifeLink database.</p>
+          </div>
+          <div className="text-right">
+            <span className="block text-xs uppercase opacity-70">Blood Group</span>
+            <span className="text-2xl font-bold text-red-500">{profile.bloodType || "N/A"}</span>
           </div>
         </div>
-      </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-8">
-        <form onSubmit={handleSubmit}>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="px-8 py-5 border-b border-gray-100 bg-gray-50">
-              <h2 className="text-lg font-bold text-gray-800">Personal Information</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Keep your contact details up to date for smooth hospital coordination.
-              </p>
+        <form onSubmit={handleSubmit} className="p-8">
+          
+          <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-6">1. Account Details</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <input type="text" name="fullName" value={profile.fullName} disabled className="w-full border rounded-lg p-2 bg-gray-100 text-gray-500 cursor-not-allowed" />
             </div>
-
-            <div className="p-8 space-y-6">
-              {/* Full Name — read-only since set at registration */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  name="fullName"
-                  value={profile.fullName}
-                  disabled
-                  className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 text-gray-500 font-medium cursor-not-allowed"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Name cannot be changed. Contact support if needed.
-                </p>
-              </div>
-
-              {/* Email — always read-only */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
-                  Email Address (Read Only)
-                </label>
-                <input
-                  type="email"
-                  value={profile.email}
-                  disabled
-                  className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 text-gray-500 font-medium cursor-not-allowed"
-                />
-              </div>
-
-              {/* Contact Number */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
-                  Contact Number
-                </label>
-                <input
-                  type="tel"
-                  name="contactNumber"
-                  value={profile.contactNumber}
-                  onChange={handleChange}
-                  maxLength="10"
-                  required
-                  pattern="[0-9]{10}"
-                  placeholder="10-digit mobile number"
-                  className="w-full border border-gray-300 rounded-xl p-3 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
-                />
-              </div>
-
-              {/* Address */}
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
-                  Address
-                </label>
-                <textarea
-                  name="address"
-                  value={profile.address}
-                  onChange={handleChange}
-                  required
-                  rows={3}
-                  placeholder="Room / Ward number, Hospital name or home address…"
-                  className="w-full border border-gray-300 rounded-xl p-3 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-red-500 transition resize-none"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email (Read Only)</label>
+              <input type="email" name="email" value={profile.email} disabled className="w-full border rounded-lg p-2 bg-gray-100 text-gray-500 cursor-not-allowed" />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+              <input type="tel" name="contactNumber" value={profile.contactNumber} onChange={handleChange} maxLength="10" required pattern="[0-9]{10}" className="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+              <input type="date" name="dob" value={profile.dob} onChange={handleChange} className="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+              <input type="password" name="password" value={profile.password} onChange={handleChange} placeholder="Leave blank to keep current" className="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+              <input type="password" name="confirmPassword" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setSaveMsg(''); }} placeholder="Re-enter new password" className={`w-full border rounded-lg p-2 ${saveMsg === 'pwdMismatch' ? 'border-red-500' : ''}`} />
+            </div>
+          </div>
 
-            {/* Save footer */}
-            <div className="px-8 py-5 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-4">
-              <div>
-                {saveMsg === 'success' && (
-                  <span className="text-green-600 text-sm font-bold">
-                    ✅ Profile updated successfully!
-                  </span>
-                )}
-                {saveMsg === 'error' && (
-                  <span className="text-red-600 text-sm font-bold">
-                    ❌ Failed to save. Please check the server.
-                  </span>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => navigate('/dashboard/recipient')}
-                  className="px-5 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium text-sm hover:bg-gray-100 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className={`px-8 py-2.5 rounded-xl text-white font-bold text-sm shadow-sm transition ${
-                    saving ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
-                  }`}
-                >
-                  {saving ? 'Saving…' : '💾 Save Changes'}
-                </button>
-              </div>
+          <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-6">2. Physical & Location</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <input type="text" name="address" value={profile.address} onChange={handleChange} required className="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <input type="text" name="city" value={profile.city} onChange={handleChange} className="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Weight (kg)</label>
+              <input type="number" name="weight" value={profile.weight} onChange={handleChange} className="w-full border rounded-lg p-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+              <select name="gender" value={profile.gender} onChange={handleChange} className="w-full border rounded-lg p-2 bg-white">
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+            <div>
+              {saveMsg === 'success' && (
+                <span className="text-green-600 text-sm font-bold">✅ Profile updated successfully!</span>
+              )}
+              {saveMsg === 'error' && (
+                <span className="text-red-600 text-sm font-bold">❌ Failed to save. Please check the server.</span>
+              )}
+              {saveMsg === 'pwdMismatch' && (
+                <span className="text-red-600 text-sm font-bold">❌ Passwords do not match.</span>
+              )}
+            </div>
+            <div className="flex gap-4">
+              <button type="button" onClick={() => navigate('/dashboard/recipient')} className="px-6 py-2 border rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button type="submit" disabled={saving} className={`px-6 py-2 bg-red-600 text-white rounded-lg font-medium ${saving ? 'opacity-70' : ''}`}>
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
           </div>
         </form>
-
-        {/* Info box */}
-        <div className="mt-4 bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
-          <span className="text-blue-500 text-lg mt-0.5">ℹ️</span>
-          <p className="text-sm text-blue-700">
-            Your contact number and address are shared with the hospital when a blood request is processed.
-            Keeping them accurate ensures faster coordination.
-          </p>
-        </div>
       </div>
     </div>
   );
