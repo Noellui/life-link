@@ -93,11 +93,22 @@ const HospitalAppointments = () => {
         }
       );
       if (!res.ok) throw new Error('Update failed');
+      const data = await res.json();
+
       setAppointments(prev =>
         prev.map(app =>
           app.id === appointmentId ? { ...app, status: newStatus } : app
         )
       );
+
+      // Show deferral notice to the hospital user for their records
+      if (newStatus === 'Screening Failed' && data.deferralUntil) {
+        alert(
+          `⚠️ Donor marked as Screening Failed.\n\n` +
+          `Deferral period: 14 days (eligible again from ${data.deferralUntil}).\n\n` +
+          `If this appointment was linked to a blood request, it has been automatically re-broadcast to other donors.`
+        );
+      }
     } catch (err) {
       alert('Failed to update appointment status. Please try again.');
     }

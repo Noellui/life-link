@@ -252,14 +252,14 @@ def active_requests(request):
             if donor and donor.city:
                 donor_city = donor.city
 
-        # FIX 1: Fetch 'Approved' requests instead of 'Pending'
+        # Fetch 'Approved' requests
         query = BloodRequestTbl.objects.select_related(
             'recipient', 'hospital'
         ).filter(status='Approved')
 
-        # FIX 2: City filter disabled — donors can see requests from all cities
-        # if donor_city:
-        #    query = query.filter(hospital__city__iexact=donor_city)
+        # Filter by donor city if it exists
+        if donor_city:
+            query = query.filter(city__iexact=donor_city)
 
         reqs = query.order_by('-request_date')[:10]
 
@@ -270,7 +270,9 @@ def active_requests(request):
                 p_name = req.recipient.full_name
 
             city = "Unknown"
-            if req.hospital and req.hospital.city:
+            if req.city:
+                city = req.city
+            elif req.hospital and req.hospital.city:
                 city = req.hospital.city
             elif req.recipient and hasattr(req.recipient, 'address') and req.recipient.address:
                 city = req.recipient.address.split(',')[-1].strip()
@@ -641,6 +643,7 @@ def get_donor_notifications(request):
                 WHERE u.email = %s
                   AND br.status = 'Approved'
                   AND br.urgency IN ('Critical', 'High')
+                  AND (br.city IS NULL OR br.city = d.city)
                 LIMIT 3
             """, [email])
             urgent_rows = cursor.fetchall()
@@ -1039,12 +1042,16 @@ def create_blood_request_raw(request):
                     return JsonResponse({'error': 'Recipient profile not found'}, status=404)
 
                 hospital_id = data.get('hospitalId')
-
+                if not hospital_id or str(hospital_id) == '0':
+                    hospital_id = None
+                    
+                city = data.get('city')
+                status = 'Approved' if hospital_id is None else 'Pending'
                 cursor.execute("""
                     INSERT INTO blood_request_tbl
                     (recipient_id, hospital_id, blood_group, units, urgency,
-                     doctor_name, status, request_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     doctor_name, city, status, request_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, [
                     recipient[0],
                     hospital_id,
@@ -1052,7 +1059,8 @@ def create_blood_request_raw(request):
                     data.get('units'),
                     data.get('urgency'),
                     data.get('doctorName', 'Emergency Dept'),
-                    'Pending',
+                    city,
+                    status,
                     timezone.now(),
                 ])
                 new_request_id = cursor.lastrowid
@@ -1205,9 +1213,260 @@ def get_recipient_requests(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+def nearby_stock_for_request(request):
+    """
+    GET ?requestId=<id>
+
+    Returns nearby hospitals with available stock when a request has been
+    Approved for 4+ hours with zero donor interest.
+    """
+    request_id = request.GET.get('requestId')
+    if not request_id:
+        return JsonResponse({'eligible': False, 'reason': 'requestId required'}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            # 1. Fetch key fields for this request
+            cursor.execute("""
+                SELECT br.blood_group, br.units, br.status, br.request_date,
+                       br.hospital_id, h.city AS req_city
+                FROM blood_request_tbl br
+                LEFT JOIN hospital_registration_tbl h ON br.hospital_id = h.hospital_id
+                WHERE br.request_id = %s
+            """, [request_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'eligible': False, 'reason': 'Request not found'}, status=404)
+
+            blood_group, units, status, request_date, original_hospital_id, req_city = row
+
+            # 2. Only eligible when Approved
+            if status != 'Approved':
+                return JsonResponse({'eligible': False, 'reason': 'Request is not in Approved state'})
+
+            # 3. Check if 4+ hours have passed since the request was created
+            cursor.execute("SELECT TIMESTAMPDIFF(MINUTE, %s, NOW())", [request_date])
+            minutes_elapsed = cursor.fetchone()[0] or 0
+            if minutes_elapsed < 240:   # 240 mins = 4 hours
+                return JsonResponse({
+                    'eligible': False,
+                    'reason': 'Too early',
+                    'minutesRemaining': 240 - minutes_elapsed,
+                })
+
+            # 4. Check for any donor interest in this request
+            cursor.execute(
+                "SELECT COUNT(*) FROM donor_interest_log WHERE request_id = %s",
+                [request_id]
+            )
+            interest_count = cursor.fetchone()[0]
+            if interest_count > 0:
+                return JsonResponse({'eligible': False, 'reason': 'Donors already interested'})
+
+            # 5. Find other hospitals with sufficient matching stock
+            cursor.execute("""
+                SELECT
+                    h.hospital_id,
+                    h.hospital_name,
+                    h.city,
+                    COALESCE(SUM(bs.quantity), 0) AS available_units
+                FROM hospital_registration_tbl h
+                JOIN blood_storage_tbl bs ON bs.hospital_id = h.hospital_id
+                JOIN blood_type_tbl bt ON bs.blood_id = bt.blood_id
+                WHERE bt.blood_type = %s
+                  AND bs.status = 'Available'
+                  AND (h.hospital_id != %s OR %s IS NULL)
+                GROUP BY h.hospital_id, h.hospital_name, h.city
+                HAVING available_units >= %s
+                ORDER BY available_units DESC
+                LIMIT 5
+            """, [blood_group, original_hospital_id, original_hospital_id, units])
+
+            hospital_rows = cursor.fetchall()
+            nearby = [
+                {
+                    'hospitalId':   r[0],
+                    'hospitalName': r[1],
+                    'city':         r[2],
+                    'unitsAvailable': int(r[3]),
+                }
+                for r in hospital_rows
+            ]
+
+            return JsonResponse({
+                'eligible':   True,
+                'bloodGroup': blood_group,
+                'unitsNeeded': units,
+                'hospitals':  nearby,
+            })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+
+def check_exhausted_options(request):
+    """
+    GET ?requestId=<id>
+    Returns { exhausted: true/false } when a request has been Approved for 24+
+    hours, has zero donor interest, and zero nearby stock at any hospital.
+    """
+    request_id = request.GET.get('requestId')
+    if not request_id:
+        return JsonResponse({'exhausted': False}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT br.status, br.request_date, br.blood_group, br.units
+                FROM blood_request_tbl br
+                WHERE br.request_id = %s
+            """, [request_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'exhausted': False})
+
+            status, request_date, blood_group, units = row
+
+            if status not in ('Approved', 'Pending'):
+                return JsonResponse({'exhausted': False})
+
+            # Must be 24+ hours old
+            cursor.execute("SELECT TIMESTAMPDIFF(HOUR, %s, NOW())", [request_date])
+            hours_elapsed = cursor.fetchone()[0] or 0
+            if hours_elapsed < 24:
+                return JsonResponse({'exhausted': False, 'hoursRemaining': 24 - hours_elapsed})
+
+            # Zero donor interest
+            cursor.execute(
+                "SELECT COUNT(*) FROM donor_interest_log WHERE request_id = %s",
+                [request_id]
+            )
+            if cursor.fetchone()[0] > 0:
+                return JsonResponse({'exhausted': False, 'reason': 'Donors interested'})
+
+            # Zero stock anywhere in the system for this blood type
+            cursor.execute("""
+                SELECT COALESCE(SUM(bs.quantity), 0)
+                FROM blood_storage_tbl bs
+                JOIN blood_type_tbl bt ON bs.blood_id = bt.blood_id
+                WHERE bt.blood_type = %s AND bs.status = 'Available'
+            """, [blood_group])
+            total_stock = cursor.fetchone()[0]
+            if total_stock >= units:
+                return JsonResponse({'exhausted': False, 'reason': 'Stock exists elsewhere'})
+
+            return JsonResponse({'exhausted': True, 'bloodGroup': blood_group})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+def check_escalation_eligibility(request):
+    """
+    GET ?requestId=<id>
+    Returns { eligible: true/false } — eligible when a hospital-targeted request
+    is 2+ hours old with no donor interest and still in Pending or Approved state.
+    """
+    request_id = request.GET.get('requestId')
+    if not request_id:
+        return JsonResponse({'eligible': False}, status=400)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT br.status, br.request_date, br.hospital_id, h.hospital_name, h.city
+                FROM blood_request_tbl br
+                LEFT JOIN hospital_registration_tbl h ON br.hospital_id = h.hospital_id
+                WHERE br.request_id = %s
+            """, [request_id])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'eligible': False, 'reason': 'Not found'}, status=404)
+
+            status, request_date, hospital_id, hospital_name, hospital_city = row
+
+            # Must be hospital-targeted (not already city-wide)
+            if hospital_id is None:
+                return JsonResponse({'eligible': False, 'reason': 'Already a broadcast request'})
+
+            # Must be in an active, unfulfilled state
+            if status not in ('Pending', 'Approved'):
+                return JsonResponse({'eligible': False, 'reason': f'Request is {status}'})
+
+            # Must be 2+ hours old
+            cursor.execute("SELECT TIMESTAMPDIFF(MINUTE, %s, NOW())", [request_date])
+            minutes_elapsed = cursor.fetchone()[0] or 0
+            if minutes_elapsed < 120:
+                return JsonResponse({
+                    'eligible': False,
+                    'reason': 'Too early',
+                    'minutesRemaining': 120 - minutes_elapsed,
+                })
+
+            # Zero donor interest
+            cursor.execute(
+                "SELECT COUNT(*) FROM donor_interest_log WHERE request_id = %s",
+                [request_id]
+            )
+            if cursor.fetchone()[0] > 0:
+                return JsonResponse({'eligible': False, 'reason': 'Donors already interested'})
+
+            return JsonResponse({
+                'eligible':     True,
+                'hospitalName': hospital_name,
+                'city':         hospital_city,
+            })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def escalate_to_broadcast(request):
+    """
+    POST { requestId, email }
+    Converts a hospital-targeted request into a city-wide broadcast by
+    clearing hospital_id, setting city from the recipient's profile, and
+    flipping status to Approved.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data       = json.loads(request.body)
+        request_id = data.get('requestId')
+        email      = data.get('email')
+
+        if not request_id or not email:
+            return JsonResponse({'error': 'requestId and email are required'}, status=400)
+
+        with connection.cursor() as cursor:
+            # Verify recipient owns this request
+            cursor.execute("""
+                SELECT br.request_id, r.city
+                FROM blood_request_tbl br
+                JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
+                JOIN user_registration_tbl u ON r.user_id = u.user_id
+                WHERE br.request_id = %s AND u.email = %s
+            """, [request_id, email])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Request not found or access denied'}, status=403)
+
+            _, recipient_city = row
+
+            # Convert: clear hospital_id, set city, set status = Approved
+            cursor.execute("""
+                UPDATE blood_request_tbl
+                SET hospital_id = NULL,
+                    city        = %s,
+                    status      = 'Approved'
+                WHERE request_id = %s
+            """, [recipient_city, request_id])
+
+        return JsonResponse({'message': 'Request successfully escalated to city-wide broadcast!'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 # =============================================================================
 # RECIPIENT BILLING & ONLINE PAYMENT
 # =============================================================================
+
 
 def get_recipient_bills(request):
     email = request.GET.get('email')
@@ -1406,7 +1665,51 @@ def hospital_appointment_update(request, appointment_id):
             )
             if cursor.rowcount == 0:
                 return JsonResponse({'error': 'Appointment not found'}, status=404)
-        return JsonResponse({'message': f'Appointment {new_status.lower()} successfully.'})
+
+            # ── SCREENING FAILED side-effects ──────────────────────────────
+            if new_status == 'Screening Failed':
+                # 1. Find linked blood request via health_questionnaire_data JSON
+                cursor.execute("""
+                    SELECT CAST(
+                        JSON_UNQUOTE(JSON_EXTRACT(health_questionnaire_data, '$.interestedInRequestId'))
+                    AS UNSIGNED)
+                    FROM appointment_tbl WHERE appointment_id = %s
+                """, [appointment_id])
+                r = cursor.fetchone()
+                linked_request_id = r[0] if (r and r[0]) else None
+
+                if linked_request_id:
+                    # 2. Re-broadcast: flip request back to Approved so donors are re-notified
+                    cursor.execute("""
+                        UPDATE blood_request_tbl
+                        SET status = 'Approved'
+                        WHERE request_id = %s
+                          AND status NOT IN ('Awaiting Payment', 'Fulfilled', 'Rejected')
+                    """, [linked_request_id])
+
+                # 3. Store deferral metadata on the appointment for the donor notification
+                cursor.execute("""
+                    UPDATE appointment_tbl
+                    SET health_questionnaire_data = JSON_SET(
+                        COALESCE(health_questionnaire_data, '{}'),
+                        '$.deferralReason', 'Screening criteria not met',
+                        '$.deferralDays', 14,
+                        '$.deferralDate', DATE_FORMAT(DATE_ADD(NOW(), INTERVAL 14 DAY), '%%Y-%%m-%%d')
+                    )
+                    WHERE appointment_id = %s
+                """, [appointment_id])
+
+        extra = {}
+        if new_status == 'Screening Failed':
+            import datetime as _dt
+            extra['deferralUntil'] = (
+                _dt.date.today() + _dt.timedelta(days=14)
+            ).strftime('%d %b %Y')
+
+        return JsonResponse({
+            'message': f'Appointment {new_status.lower()} successfully.',
+            **extra,
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -1660,9 +1963,9 @@ def hospital_requests_list(request):
                     COALESCE(r.address, 'N/A')               AS address
                 FROM blood_request_tbl br
                 LEFT JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
-                WHERE br.hospital_id = %s
+                WHERE br.hospital_id = %s OR (br.hospital_id IS NULL AND br.city = (SELECT city FROM hospital_registration_tbl WHERE hospital_id = %s))
                 ORDER BY br.request_date DESC
-            """, [hospital_id])
+            """, [hospital_id, hospital_id])
             rows = cursor.fetchall()
 
         data = []
@@ -1689,19 +1992,154 @@ def hospital_requests_list(request):
 
 
 @csrf_exempt
+def allocate_blood_stock(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data = json.loads(request.body)
+        email = data.get('email')
+        request_id = data.get('requestId')
+        
+        if not email or not request_id:
+            return JsonResponse({'error': 'email and requestId are required'}, status=400)
+            
+        with connection.cursor() as cursor:
+            # 1. Get hospital_id
+            cursor.execute("SELECT h.hospital_id FROM hospital_registration_tbl h JOIN user_registration_tbl u ON h.user_id = u.user_id WHERE u.email = %s", [email])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Hospital not found'}, status=404)
+            hospital_id = row[0]
+            
+            # 2. Fetch blood request details
+            cursor.execute("SELECT blood_group, units, recipient_id, status FROM blood_request_tbl WHERE request_id = %s", [request_id])
+            req_row = cursor.fetchone()
+            if not req_row:
+                return JsonResponse({'error': 'Blood request not found'}, status=404)
+            blood_group, required_units, recipient_id, current_status = req_row
+            
+            if current_status != 'Pending':
+                return JsonResponse({'error': 'Only Pending requests can be allocated from stock'}, status=400)
+                
+            # 3. Get total available stock
+            cursor.execute("""
+                SELECT COALESCE(SUM(quantity), 0) 
+                FROM blood_storage_tbl 
+                WHERE hospital_id = %s 
+                  AND status = 'Available'
+                  AND blood_id = (SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s LIMIT 1)
+            """, [hospital_id, blood_group])
+            stock_total = cursor.fetchone()[0]
+            
+            if stock_total < required_units:
+                return JsonResponse({'error': f"Insufficient {blood_group} stock ({stock_total} available, {required_units} needed)"}, status=400)
+            
+            # 4. Deduct stock (FIFO based on expiry date)
+            units_to_deduct = required_units
+            cursor.execute("""
+                SELECT unit_id, quantity 
+                FROM blood_storage_tbl 
+                WHERE hospital_id = %s 
+                  AND status = 'Available'
+                  AND blood_id = (SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s LIMIT 1)
+                ORDER BY expiry_date ASC
+            """, [hospital_id, blood_group])
+            
+            storage_rows = cursor.fetchall()
+            for unit_id, quantity in storage_rows:
+                if units_to_deduct <= 0:
+                    break
+                    
+                if quantity <= units_to_deduct:
+                    # Mark entire row as Allocated
+                    cursor.execute("UPDATE blood_storage_tbl SET status = 'Allocated', quantity = 0 WHERE unit_id = %s", [unit_id])
+                    units_to_deduct -= quantity
+                else:
+                    # Partially deduct from this row
+                    cursor.execute("UPDATE blood_storage_tbl SET quantity = quantity - %s WHERE unit_id = %s", [units_to_deduct, unit_id])
+                    
+                    # Create a split row for the allocated portion to maintain audit trace
+                    cursor.execute("""
+                        INSERT INTO blood_storage_tbl (hospital_id, blood_id, quantity, expiry_date, status)
+                        SELECT hospital_id, blood_id, %s, expiry_date, 'Allocated' 
+                        FROM blood_storage_tbl WHERE unit_id = %s
+                    """, [units_to_deduct, unit_id])
+                    
+                    units_to_deduct = 0
+            
+            # 5. Update blood request status and claim it
+            cursor.execute("""
+                UPDATE blood_request_tbl 
+                SET status = 'Awaiting Payment', hospital_id = %s 
+                WHERE request_id = %s
+            """, [hospital_id, request_id])
+            
+            # 6. Generate invoice for stock allocation (Storage + Processing fees)
+            cursor.execute("SELECT blood_id FROM blood_type_tbl WHERE blood_type = %s LIMIT 1", [blood_group])
+            blood_id_row = cursor.fetchone()
+            blood_id = blood_id_row[0] if blood_id_row else None
+            
+            # Create a dummy appointment to satisfy recipient billing joins natively
+            import json as _json
+            from django.utils import timezone
+            cursor.execute("""
+                INSERT INTO appointment_tbl (hospital_id, appointment_date, status, health_questionnaire_data)
+                VALUES (%s, %s, 'Transfusion Done', %s)
+            """, [hospital_id, timezone.now(), _json.dumps({'interestedInRequestId': str(request_id)})])
+            dummy_appt_id = cursor.lastrowid
+            
+            cursor.execute("""
+                INSERT INTO invoice_no_tbl
+                (appointment_id, donor_id, blood_id, blood_received_by, mobile_no, quantity, rate)
+                SELECT %s, NULL, %s, r.full_name, COALESCE(u.contact_no, '0000000000'), %s, 1500.0
+                FROM recipient_tbl r
+                JOIN user_registration_tbl u ON r.user_id = u.user_id
+                WHERE r.recipient_id = %s
+            """, [dummy_appt_id, blood_id, required_units, recipient_id])
+            
+        return JsonResponse({'message': 'Stock allocated successfully, request moved to Awaiting Payment.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
 def update_request_status(request, request_id):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     try:
         data       = json.loads(request.body)
         new_status = data.get('status')
+        email      = data.get('email')
+        
         if new_status not in ('Approved', 'Rejected', 'Pending', 'Fulfilled'):
             return JsonResponse({'error': 'Invalid status value'}, status=400)
+            
         with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE blood_request_tbl SET status = %s WHERE request_id = %s",
-                [new_status, request_id]
-            )
+            hospital_id = None
+            if email:
+                cursor.execute("SELECT h.hospital_id FROM hospital_registration_tbl h JOIN user_registration_tbl u ON h.user_id = u.user_id WHERE u.email = %s", [email])
+                row = cursor.fetchone()
+                if row:
+                    hospital_id = row[0]
+            
+            if hospital_id:
+                # Update status and claim the request if it was unassigned (city-wide)
+                cursor.execute(
+                    "UPDATE blood_request_tbl SET status = %s, hospital_id = COALESCE(hospital_id, %s) WHERE request_id = %s",
+                    [new_status, hospital_id, request_id]
+                )
+                # Claim existing interested donor appointments that had no hospital
+                cursor.execute("""
+                    UPDATE appointment_tbl 
+                    SET hospital_id = %s 
+                    WHERE hospital_id IS NULL 
+                      AND JSON_UNQUOTE(JSON_EXTRACT(health_questionnaire_data, '$.interestedInRequestId')) = %s
+                """, [hospital_id, str(request_id)])
+            else:
+                cursor.execute(
+                    "UPDATE blood_request_tbl SET status = %s WHERE request_id = %s",
+                    [new_status, request_id]
+                )
             if cursor.rowcount == 0:
                 return JsonResponse({'error': 'Request not found'}, status=404)
         return JsonResponse({'message': f'Request marked as {new_status}.'})

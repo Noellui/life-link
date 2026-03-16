@@ -67,11 +67,11 @@ const Login = ({ onLogin }) => {
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label className="block text-sm font-medium text-gray-700">Email address</label>
-              <input name="email" type="email" required onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
+              <input name="email" type="email" required value={formData.email} onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Password</label>
-              <input name="password" type="password" required onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
+              <input name="password" type="password" required value={formData.password} onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
             </div>
             <button type="submit" disabled={isLoading} className="w-full bg-red-600 text-white py-2 rounded-md hover:bg-red-700 transition shadow-sm font-bold">
               {isLoading ? 'Processing...' : 'Sign In'}

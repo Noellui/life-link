@@ -52,6 +52,7 @@ urlpatterns = [
     path('hospital/events/<int:event_id>/donors/', views.hospital_event_donors, name='hospital_event_donors'),
     path('hospital/stock-log/', views.hospital_stock_log, name='hospital_stock_log'),
     path('hospital/requests/', views.hospital_requests_list, name='hospital_requests_list'),
+    path('hospital/allocate-stock/', views.allocate_blood_stock, name='allocate_stock'),
     path('requests/<int:request_id>/update-status/', views.update_request_status, name='update_request_status'),
 
     # Transfusion
@@ -71,6 +72,10 @@ urlpatterns = [
     # --- RECIPIENT ---
     path('recipient/create-request/', views.create_blood_request_raw, name='create_request'),
     path('recipient/requests/', views.get_recipient_requests, name='recipient_requests'),
+    path('recipient/nearby-stock/', views.nearby_stock_for_request, name='nearby_stock'),
+    path('recipient/check-escalation/', views.check_escalation_eligibility, name='check_escalation'),
+    path('recipient/escalate-broadcast/', views.escalate_to_broadcast, name='escalate_broadcast'),
+    path('recipient/check-exhausted/', views.check_exhausted_options, name='check_exhausted'),
     path('recipient/bills/', views.get_recipient_bills, name='recipient_bills'),
     path('recipient/bills/pay/', views.mark_bill_paid, name='mark_bill_paid'),
 
