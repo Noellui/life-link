@@ -259,7 +259,7 @@ def active_requests(request):
 
         # FIX 2: City filter disabled — donors can see requests from all cities
         # if donor_city:
-        #     query = query.filter(hospital__city__iexact=donor_city)
+        #    query = query.filter(hospital__city__iexact=donor_city)
 
         reqs = query.order_by('-request_date')[:10]
 
@@ -2145,3 +2145,93 @@ def get_donor_interests(request):
         return JsonResponse(request_ids, safe=False)
     except Exception as e:
         return JsonResponse([], safe=False)
+
+
+@csrf_exempt
+def admin_finance_report(request):
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    date_filter_rev = ""
+    date_filter_inv = ""
+    date_filter_sub = ""
+    params_rev = []
+    params_inv = []
+    params_sub = []
+
+    # Apply Date Filters if provided
+    if start_date and end_date:
+        date_filter_rev = "WHERE transaction_date >= %s AND transaction_date <= %s"
+        params_rev.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+
+        date_filter_inv = "AND p.payment_date >= %s AND p.payment_date <= %s"
+        params_inv.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+
+        # For subscriptions, check if the plan was active during this window
+        date_filter_sub = "WHERE s.start_date <= %s AND s.end_date >= %s"
+        params_sub.extend([end_date, start_date])
+
+    try:
+        with connection.cursor() as cursor:
+            # 1. Fetch Revenue by Category (Subscriptions, Sponsorships, etc.)
+            cursor.execute(f"""
+                SELECT revenue_type, SUM(amount)
+                FROM admin_revenue_tbl
+                {date_filter_rev}
+                GROUP BY revenue_type
+            """, params_rev)
+            rev_rows = cursor.fetchall()
+
+            # 2. Fetch Platform Fees from Paid Patient Invoices
+            cursor.execute(f"""
+                SELECT SUM(i.platform_fee)
+                FROM invoice_no_tbl i
+                JOIN payment_tbl p ON i.bill_no = p.bill_no
+                WHERE p.status = 'Paid' {date_filter_inv}
+            """, params_inv)
+            inv_row = cursor.fetchone()
+            patient_fees = float(inv_row[0]) if inv_row and inv_row[0] else 0.0
+
+            # 3. Fetch Hospital Subscription Statuses (Now includes amount_paid)
+            cursor.execute(f"""
+                SELECT h.hospital_name, s.plan_name, s.status, s.end_date, s.amount_paid
+                FROM hospital_subscription_tbl s
+                JOIN hospital_registration_tbl h ON s.hospital_id = h.hospital_id
+                {date_filter_sub}
+                ORDER BY s.end_date DESC
+            """, params_sub)
+            sub_rows = cursor.fetchall()
+
+        # Compile the payload for React
+        revenue_by_category = []
+        total_revenue = 0.0
+
+        for r_type, amt in rev_rows:
+            amount = float(amt)
+            revenue_by_category.append({"type": r_type, "amount": amount})
+            total_revenue += amount
+
+        # Append Patient Platform Fees as its own category if it exists
+        if patient_fees > 0:
+            revenue_by_category.append({"type": "Patient Platform Fees", "amount": patient_fees})
+            total_revenue += patient_fees
+
+        subs = []
+        for h_name, plan, status, e_date, amt_paid in sub_rows:
+            subs.append({
+                "hospitalName": h_name,
+                "planName": plan,
+                "status": status,
+                "endDate": e_date.strftime('%Y-%m-%d') if e_date else 'N/A',
+                "amountPaid": float(amt_paid) if amt_paid is not None else 0.0
+            })
+
+        return JsonResponse({
+            "totalRevenue": total_revenue,
+            "revenueByCategory": revenue_by_category,
+            "hospitalSubscriptions": subs
+        })
+
+    except Exception as e:
+        print(f"Finance Report Error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

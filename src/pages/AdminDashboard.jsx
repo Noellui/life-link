@@ -8,7 +8,7 @@ const AdminDashboard = ({ onLogout }) => {
 
   // --- 1. STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState('overview');
-  const [loading, setLoading] = useState(false); 
+  const [loading, setLoading] = useState(false);
 
   // Data States
   const [events, setEvents] = useState([]);
@@ -16,7 +16,7 @@ const AdminDashboard = ({ onLogout }) => {
   const [users, setUsers] = useState([]);
   const [monthlyActivity, setMonthlyActivity] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   // Dashboard Card Stats
   const [dashboardStats, setDashboardStats] = useState({
     donors: 0,
@@ -55,7 +55,7 @@ const AdminDashboard = ({ onLogout }) => {
       if (eventsResponse.ok) {
         setEvents(await eventsResponse.json());
       } else {
-        setEvents([]); 
+        setEvents([]);
       }
     } catch (error) {
       console.error("Failed to fetch dashboard data", error);
@@ -103,14 +103,13 @@ const AdminDashboard = ({ onLogout }) => {
     const dateStr = new Date().toLocaleDateString();
 
     doc.setFontSize(20);
-    doc.setTextColor(220, 38, 38); 
+    doc.setTextColor(220, 38, 38);
     doc.text("LifeLink System Analytics Report", 14, 22);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generated on: ${dateStr}`, 14, 30);
 
-    // Use autoTable(doc, ...) instead of doc.autoTable(...)
     autoTable(doc, {
       startY: 40,
       head: [['Category', 'Count']],
@@ -124,7 +123,7 @@ const AdminDashboard = ({ onLogout }) => {
     });
 
     doc.text("Live Blood Inventory", 14, doc.lastAutoTable.finalY + 10);
-    
+
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 15,
       head: [['Blood Group', 'Units', 'Status']],
@@ -136,9 +135,9 @@ const AdminDashboard = ({ onLogout }) => {
   };
   const getProgressColor = (count, capacity) => {
     const p = (count / capacity) * 100;
-    if (p < 20) return 'bg-red-600'; 
-    if (p < 40) return 'bg-yellow-500'; 
-    return 'bg-green-600'; 
+    if (p < 20) return 'bg-red-600';
+    if (p < 40) return 'bg-yellow-500';
+    return 'bg-green-600';
   };
 
   // --- 4. RENDERERS ---
@@ -170,8 +169,7 @@ const AdminDashboard = ({ onLogout }) => {
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">⚠️ Critical System Alerts</h3>
-        
-        {/* ADDED: Empty state handling for inventory */}
+
         {inventoryStats.length === 0 ? (
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
             <strong>Notice:</strong> No blood inventory data is currently available in the system.
@@ -179,13 +177,13 @@ const AdminDashboard = ({ onLogout }) => {
         ) : (
           <ul className="space-y-3">
             {inventoryStats.some(i => i.status === 'Critical') ? (
-               <li className="flex items-start bg-red-50 p-4 rounded-lg border border-red-100">
-                 <span className="text-red-500 mr-3 text-lg">●</span>
-                 <span className="text-sm text-red-800">
-                   <strong>Critical Stock Alert:</strong> Empty groups: 
-                   {inventoryStats.filter(i => i.status === 'Critical').map(i => ` ${i.type}`)}.
-                 </span>
-               </li>
+              <li className="flex items-start bg-red-50 p-4 rounded-lg border border-red-100">
+                <span className="text-red-500 mr-3 text-lg">●</span>
+                <span className="text-sm text-red-800">
+                  <strong>Critical Stock Alert:</strong> Empty groups:
+                  {inventoryStats.filter(i => i.status === 'Critical').map(i => ` ${i.type}`)}.
+                </span>
+              </li>
             ) : (
               <li className="flex items-start bg-green-50 p-4 rounded-lg border border-green-100">
                 <span className="text-green-500 mr-3 text-lg">●</span>
@@ -250,8 +248,8 @@ const AdminDashboard = ({ onLogout }) => {
   );
 
   const renderUsers = () => {
-    const filteredUsers = users.filter(u => 
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    const filteredUsers = users.filter(u =>
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.role.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -260,14 +258,14 @@ const AdminDashboard = ({ onLogout }) => {
       <div className="space-y-6 animate-fade-in-up">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold text-gray-800">User Management</h2>
-          <input 
+          <input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search users..." 
-            className="border rounded-lg px-4 py-2 text-sm w-64 focus:ring-2 focus:ring-red-500 outline-none" 
+            placeholder="Search users..."
+            className="border rounded-lg px-4 py-2 text-sm w-64 focus:ring-2 focus:ring-red-500 outline-none"
           />
         </div>
-        
+
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -332,27 +330,70 @@ const AdminDashboard = ({ onLogout }) => {
           <div className="p-6 border-b border-gray-800">
             <h1 className="text-2xl font-black text-red-500">🛡️ ADMIN</h1>
           </div>
+
+          {/* UPDATED NAVIGATION BAR WITH HOVER DROPDOWN */}
           <nav className="mt-6 px-4 space-y-2">
-            {[
-              { id: 'overview', label: '📊 Overview' },
-              { id: 'reports', label: '📈 Reports' },
-              { id: 'users', label: '👥 Users' },
-              { id: 'events', label: '📅 Events' }
-            ].map(tab => (
-              <button 
-                key={tab.id} 
-                onClick={() => setActiveTab(tab.id)} 
-                className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === tab.id ? 'bg-red-600' : 'hover:bg-gray-800'}`}
+
+            {/* Overview */}
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === 'overview' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
+            >
+              📊 Overview
+            </button>
+
+            {/* Reports Dropdown */}
+            <div className="relative group">
+              <button
+                onClick={() => setActiveTab('reports')}
+                className={`w-full flex justify-between items-center px-4 py-3 rounded-xl transition ${activeTab === 'reports' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
               >
-                {tab.label}
+                <span>📈 Reports</span>
+                <span className="text-xs opacity-50 group-hover:rotate-180 transition-transform duration-200">▼</span>
               </button>
-            ))}
+
+              {/* Flyout Sub-menu (Appears on Hover) */}
+              <div className="absolute left-0 top-full mt-1 w-[105%] bg-gray-800 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden border border-gray-700">
+                <a href="/admin/report/finance" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
+                  Financial & Revenue
+                </a>
+                <a href="/admin/report/inventory" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
+                  Global Blood Inventory
+                </a>
+                <a href="/admin/report/users" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
+                  User & Demographic
+                </a>
+                <a href="/admin/report/supply-demand" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
+                  Supply & Demand Dynamics
+                </a>
+                <a href="/admin/report/hospital-performance" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
+                  Hospital & Event Performance
+                </a>
+              </div>
+            </div>
+
+            {/* Users */}
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === 'users' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
+            >
+              👥 Users
+            </button>
+
+            {/* Events */}
+            <button
+              onClick={() => setActiveTab('events')}
+              className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === 'events' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
+            >
+              📅 Events
+            </button>
+
           </nav>
         </div>
 
         <div className="p-4 border-t border-gray-800">
-          <button 
-            onClick={handleLogoutClick} 
+          <button
+            onClick={handleLogoutClick}
             className="w-full text-left px-4 py-3 rounded-xl hover:bg-gray-800 transition flex items-center gap-3 text-gray-300 hover:text-white"
           >
             <span>🚪</span> Log Out

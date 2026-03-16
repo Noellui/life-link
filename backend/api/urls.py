@@ -13,6 +13,7 @@ urlpatterns = [
     path('admin/users/<int:user_id>/', views.delete_user, name='delete_user'),
     path('admin/events/<int:event_id>/', views.delete_event_view, name='delete_event'),
     path('admin/events/', views.event_list, name='admin_event_list'),
+    path('admin/finance/', views.admin_finance_report, name='admin_finance_report'),
 
     # --- DONOR DASHBOARD & PROFILE ---
     path('donor/stats/', views.donor_dashboard_stats, name='donor_stats'),

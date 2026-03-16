@@ -28,6 +28,7 @@ import HospitalAppointments from './pages/HospitalAppointments';
 import MyBills from './pages/MyBills';
 import RecipientProfile from './pages/RecipientProfile';
 import HospitalProfile from './pages/HospitalProfile';
+import FinanceReport from './pages/FinanceReport';
 
 const BASE_URL = 'http://127.0.0.1:8000';
 
@@ -84,9 +85,9 @@ function App() {
   return (
     <Router>
       <div className="min-h-screen bg-gray-50 flex flex-col">
-        
+
         <Navbar user={user} onLogout={handleLogout} />
-        
+
         <Routes>
           {/* --- PUBLIC ROUTES --- */}
           <Route path="/" element={<Home />} />
@@ -94,21 +95,21 @@ function App() {
           <Route path="/login" element={<Login onLogin={handleLogin} />} />
 
           {/* --- PROTECTED DASHBOARDS --- */}
-          <Route 
-            path="/dashboard/admin" 
-            element={user?.role === 'Admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} 
+          <Route
+            path="/dashboard/admin"
+            element={user?.role === 'Admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />}
           />
-          <Route 
-            path="/dashboard/donor" 
-            element={user?.role === 'Donor' ? <DonorDashboard user={user} /> : <Navigate to="/login" />} 
+          <Route
+            path="/dashboard/donor"
+            element={user?.role === 'Donor' ? <DonorDashboard user={user} /> : <Navigate to="/login" />}
           />
-          <Route 
-            path="/dashboard/hospital" 
-            element={<HospitalRoute><HospitalDashboard user={user} /></HospitalRoute>} 
+          <Route
+            path="/dashboard/hospital"
+            element={<HospitalRoute><HospitalDashboard user={user} /></HospitalRoute>}
           />
-          <Route 
-            path="/dashboard/recipient" 
-            element={user?.role === 'Recipient' ? <RecipientDashboard user={user} /> : <Navigate to="/login" />} 
+          <Route
+            path="/dashboard/recipient"
+            element={user?.role === 'Recipient' ? <RecipientDashboard user={user} /> : <Navigate to="/login" />}
           />
 
           {/* --- RECIPIENT FEATURES --- */}
@@ -126,10 +127,12 @@ function App() {
           {/* --- HOSPITAL FEATURES --- */}
           <Route path="/patient-requests" element={<HospitalRoute><PatientRequests /></HospitalRoute>} />
           <Route path="/manage-stock" element={<HospitalRoute><StockManagement /></HospitalRoute>} />
-          <Route path="/hospital/events" element={<HospitalRoute><HospitalEvents /></HospitalRoute>} /> 
-          <Route path="/hospital/appointments" element={<HospitalRoute><HospitalAppointments /></HospitalRoute>} /> 
+          <Route path="/hospital/events" element={<HospitalRoute><HospitalEvents /></HospitalRoute>} />
+          <Route path="/hospital/appointments" element={<HospitalRoute><HospitalAppointments /></HospitalRoute>} />
           <Route path="/hospital-profile" element={user?.role === 'Hospital' ? <HospitalProfile /> : <Navigate to="/login" />} />
-          
+
+          <Route path="/admin/report/finance" element={<FinanceReport />} />
+
           {/* --- FALLBACK --- */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
