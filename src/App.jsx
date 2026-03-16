@@ -15,6 +15,7 @@ import AdminDashboard from './pages/AdminDashboard';
 
 // Feature Page Imports
 import DonationCamps from './pages/DonationCamps';
+
 import DonorHistory from './pages/DonorHistory';
 import ScheduleAppointment from './pages/ScheduleAppointment';
 import DonorProfile from './pages/DonorProfile';
@@ -27,6 +28,9 @@ import HospitalAppointments from './pages/HospitalAppointments';
 import MyBills from './pages/MyBills';
 import RecipientProfile from './pages/RecipientProfile';
 import HospitalProfile from './pages/HospitalProfile';
+
+const BASE_URL = 'http://127.0.0.1:8000';
+
 
 // ✅ Single key used everywhere for localStorage
 export const USER_STORAGE_KEY = 'lifeLinkUser';
@@ -49,6 +53,32 @@ function App() {
     setUser(null);
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem('user_data'); // clean up legacy key
+  };
+
+  // --- REFRESH SUBSCRIPTION STATUS FOR HOSPITALS ---
+  React.useEffect(() => {
+    if (user?.role === 'Hospital' && user?.email) {
+      fetch(`${BASE_URL}/api/hospital/id/?email=${encodeURIComponent(user.email)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.subscriptionStatus && data.subscriptionStatus !== user.subscriptionStatus) {
+            const updatedUser = { ...user, subscriptionStatus: data.subscriptionStatus };
+            setUser(updatedUser);
+            localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+          }
+        })
+        .catch(err => console.error("Sub check failed:", err));
+    }
+  }, [user?.email, user?.role, user?.subscriptionStatus]);
+
+  // --- ROUTE GUARDS ---
+  const HospitalRoute = ({ children }) => {
+    if (user?.role !== 'Hospital') return <Navigate to="/login" />;
+    // If not active, only allow profile (where subscription tab lives)
+    if (user.subscriptionStatus !== 'Active') {
+      return <Navigate to="/hospital-profile" />;
+    }
+    return children;
   };
 
   return (
@@ -74,7 +104,7 @@ function App() {
           />
           <Route 
             path="/dashboard/hospital" 
-            element={user?.role === 'Hospital' ? <HospitalDashboard user={user} /> : <Navigate to="/login" />} 
+            element={<HospitalRoute><HospitalDashboard user={user} /></HospitalRoute>} 
           />
           <Route 
             path="/dashboard/recipient" 
@@ -94,11 +124,11 @@ function App() {
           <Route path="/profile" element={<DonorProfile />} />
 
           {/* --- HOSPITAL FEATURES --- */}
-          <Route path="/patient-requests" element={<PatientRequests />} />
-          <Route path="/manage-stock" element={<StockManagement />} />
-          <Route path="/hospital/events" element={<HospitalEvents />} /> 
-          <Route path="/hospital/appointments" element={<HospitalAppointments />} /> 
-          <Route path="/hospital-profile" element={<HospitalProfile />} />
+          <Route path="/patient-requests" element={<HospitalRoute><PatientRequests /></HospitalRoute>} />
+          <Route path="/manage-stock" element={<HospitalRoute><StockManagement /></HospitalRoute>} />
+          <Route path="/hospital/events" element={<HospitalRoute><HospitalEvents /></HospitalRoute>} /> 
+          <Route path="/hospital/appointments" element={<HospitalRoute><HospitalAppointments /></HospitalRoute>} /> 
+          <Route path="/hospital-profile" element={user?.role === 'Hospital' ? <HospitalProfile /> : <Navigate to="/login" />} />
           
           {/* --- FALLBACK --- */}
           <Route path="*" element={<Navigate to="/" replace />} />

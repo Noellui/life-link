@@ -35,14 +35,27 @@ def login_view(request):
                 return JsonResponse({'error': 'User not found'}, status=404)
 
             if user.password == data.get('password'):
+                user_info = {
+                    'name':  user.full_name,
+                    'email': user.email,
+                    'role':  user.user_role,
+                    'id':    user.user_id,
+                }
+
+                if user.user_role == 'Hospital':
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT COALESCE(s.status, 'Pending')
+                            FROM hospital_registration_tbl h
+                            LEFT JOIN hospital_subscription_tbl s ON h.hospital_id = s.hospital_id
+                            WHERE h.user_id = %s
+                        """, [user.user_id])
+                        sub_row = cursor.fetchone()
+                        user_info['subscriptionStatus'] = sub_row[0] if sub_row else 'Pending'
+
                 return JsonResponse({
                     'message': 'Login successful',
-                    'user': {
-                        'name':  user.full_name,
-                        'email': user.email,
-                        'role':  user.user_role,
-                        'id':    user.user_id,
-                    }
+                    'user': user_info
                 }, status=200)
             return JsonResponse({'error': 'Invalid password'}, status=401)
         except Exception as e:
@@ -926,15 +939,20 @@ def get_hospital_id(request):
     try:
         with connection.cursor() as cursor:
             cursor.execute("""
-                SELECT h.hospital_id, h.hospital_name
+                SELECT h.hospital_id, h.hospital_name, COALESCE(s.status, 'Pending')
                 FROM hospital_registration_tbl h
                 JOIN user_registration_tbl u ON h.user_id = u.user_id
+                LEFT JOIN hospital_subscription_tbl s ON h.hospital_id = s.hospital_id
                 WHERE u.email = %s
             """, [email])
             row = cursor.fetchone()
         if not row:
             return JsonResponse({'error': 'Hospital profile not found'}, status=404)
-        return JsonResponse({'hospitalId': row[0], 'hospitalName': row[1]})
+        return JsonResponse({
+            'hospitalId': row[0],
+            'hospitalName': row[1],
+            'subscriptionStatus': row[2]
+        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -1854,6 +1872,54 @@ def backfill_invoice(request):
             else:
                 return JsonResponse({'message': 'Invoice already exists'}, status=200)
 
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def create_free_trial_subscription(request):
+    """
+    POST { email }
+    Creates a free 30-day trial subscription for a hospital with no subscription.
+    Rejects if a subscription already exists.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        data  = json.loads(request.body)
+        email = data.get('email')
+        if not email:
+            return JsonResponse({'error': 'email required'}, status=400)
+
+        with connection.cursor() as cursor:
+            # Get hospital_id
+            cursor.execute("""
+                SELECT h.hospital_id
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+                WHERE u.email = %s
+            """, [email])
+            row = cursor.fetchone()
+            if not row:
+                return JsonResponse({'error': 'Hospital not found'}, status=404)
+
+            hospital_id = row[0]
+
+            # Check for existing subscription
+            cursor.execute(
+                "SELECT subscription_id FROM hospital_subscription_tbl WHERE hospital_id = %s",
+                [hospital_id]
+            )
+            if cursor.fetchone():
+                return JsonResponse({'error': 'Subscription already exists'}, status=400)
+
+            # Insert free 30-day trial
+            cursor.execute("""
+                INSERT INTO hospital_subscription_tbl (hospital_id, start_date, end_date, status, amount_paid)
+                VALUES (%s, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 'Active', 0)
+            """, [hospital_id])
+
+        return JsonResponse({'message': 'Free trial activated! Your subscription is active for 30 days.'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

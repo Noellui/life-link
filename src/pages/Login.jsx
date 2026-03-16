@@ -29,8 +29,12 @@ const Login = ({ onLogin }) => {
         localStorage.setItem('user_data', JSON.stringify(data.user));
         onLogin(data.user);
         
-        const rolePath = data.user.role.toLowerCase(); 
-        navigate(`/dashboard/${rolePath}`);
+        if (data.user.role === 'Hospital' && data.user.subscriptionStatus !== 'Active') {
+          navigate('/hospital-profile');
+        } else {
+          const rolePath = data.user.role.toLowerCase(); 
+          navigate(`/dashboard/${rolePath}`);
+        }
       } else {
         setError(data.error || 'Invalid credentials');
       }

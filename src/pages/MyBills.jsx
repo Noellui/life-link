@@ -79,10 +79,10 @@ export default function MyBills() {
     const amountWithGST = Math.round(bill.amount * 1.18 * 100);
 
     const options = {
-      key: 'rzp_test_SQPi7UmKIOJJal',
+      key: 'rzp_test_SRRzMc4LMgrMEL',
       amount: amountWithGST,
       currency: 'INR',
-      name: 'LifeLink',
+      name: 'Life Link',
       description: `Payment for Blood Unit (Bill #${bill.billNo})`,
       handler: async function (response) {
         // Optimistic UI — mark paid immediately

@@ -72,5 +72,5 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/t
 
 
 razorpay:
-test key id: rzp_test_SQPi7UmKIOJJal
-Secret test key : v5fqP1fJfaRehuzK4Xt4E5qY
+test key id: rzp_test_SRRzMc4LMgrMEL
+Secret test key : pfepWNzGoWjAl9XICokK6vJj

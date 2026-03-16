@@ -20,6 +20,7 @@ export default function HospitalProfile() {
   const [loading, setLoading] = useState(true);
   const [renewing, setRenewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [startingFreeTrial, setStartingFreeTrial] = useState(false);
   const [saveMsg, setSaveMsg] = useState(''); // 'success' | 'error' | 'pwdMismatch'
 
   // Editable form state
@@ -80,6 +81,14 @@ export default function HospitalProfile() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // --- ESCAPE HATCH: FORCE SUBSCRIPTION TAB IF EXPIRED ---
+  useEffect(() => {
+    if (subscription && subscription.status !== 'Active') {
+      setActiveTab('subscription');
+    }
+  }, [subscription]);
+
+
   const handleChange = (e) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
     setSaveMsg('');
@@ -129,6 +138,28 @@ export default function HospitalProfile() {
     }
   };
 
+  const handleStartFreeTrial = async () => {
+    setStartingFreeTrial(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/hospital/subscription/free-trial/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: getEmail() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('🎉 ' + data.message);
+        fetchData(); // Refresh to show the new subscription
+      } else {
+        alert('❌ ' + (data.error || 'Failed to start free trial.'));
+      }
+    } catch (err) {
+      alert('❌ Network error. Please try again.');
+    } finally {
+      setStartingFreeTrial(false);
+    }
+  };
+
   const handleRenewPayment = async () => {
     setRenewing(true);
     const isLoaded = await loadRazorpayScript();
@@ -139,10 +170,10 @@ export default function HospitalProfile() {
     }
 
     const options = {
-      key: 'rzp_test_SQPi7UmKIOJJal',
-      amount: 200 * 100,
+      key: 'rzp_test_SRRzMc4LMgrMEL',
+      amount: 500 * 100,
       currency: 'INR',
-      name: 'LifeLink',
+      name: 'Life Link',
       description: 'Hospital Subscription Renewal (30 days)',
       handler: async function (response) {
         try {
@@ -184,8 +215,14 @@ export default function HospitalProfile() {
     );
   }
 
+  const isExpired = subscription && subscription.status !== 'Active';
+
   const tabs = [
-    { key: 'profile', label: '🏥 Profile Information' },
+    { 
+      key: 'profile', 
+      label: isExpired ? '🔒 Profile Information' : '🏥 Profile Information',
+      disabled: isExpired
+    },
     { key: 'subscription', label: '💳 Subscription' },
   ];
 
@@ -210,11 +247,14 @@ export default function HospitalProfile() {
           {tabs.map(tab => (
             <button
               key={tab.key}
+              disabled={tab.disabled}
               onClick={() => setActiveTab(tab.key)}
               className={`px-5 py-2.5 rounded-t-lg text-sm font-bold transition-all border-b-2 -mb-px ${
                 activeTab === tab.key
                   ? 'border-blue-600 text-blue-600 bg-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : tab.disabled 
+                    ? 'border-transparent text-gray-300 cursor-not-allowed'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
               {tab.label}
@@ -407,7 +447,7 @@ export default function HospitalProfile() {
                         </div>
                         <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 text-center">
                           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Renewal Fee</p>
-                          <p className="text-xl font-black text-gray-800">₹200</p>
+                          <p className="text-xl font-black text-gray-800">₹500</p>
                           <p className="text-xs text-gray-500 mt-1">for 30 days</p>
                         </div>
                       </div>
@@ -445,7 +485,7 @@ export default function HospitalProfile() {
                               Processing…
                             </>
                           ) : (
-                            <>💳 Extend Subscription (₹200)</>
+                            <>💳 Extend Subscription (₹500)</>
                           )}
                         </button>
                       </div>
@@ -453,9 +493,109 @@ export default function HospitalProfile() {
                   </div>
                 </>
               ) : (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-12 text-center">
-                  <p className="text-gray-400 text-lg">No subscription data found.</p>
-                  <p className="text-gray-400 text-sm mt-2">Please contact support to set up your hospital subscription.</p>
+                /* ── NO SUBSCRIPTION — show signup / pricing page ── */
+                <div className="space-y-6">
+                  {/* Hero banner */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 50%, #1E3A8A 100%)',
+                    borderRadius: 20,
+                    padding: '40px 36px',
+                    color: 'white',
+                    textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: 48, marginBottom: 12 }}>🏥</div>
+                    <h2 style={{ fontSize: 26, fontWeight: 800, margin: '0 0 8px' }}>
+                      Get Started with Life Link
+                    </h2>
+                    <p style={{ opacity: 0.85, fontSize: 15, margin: 0 }}>
+                      Your first month is completely <strong>FREE</strong>. Then ₹500/month — cancel anytime.
+                    </p>
+                  </div>
+
+                  {/* Pricing cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                    {/* Free Trial Card */}
+                    <div style={{
+                      border: '2px solid #1D4ED8',
+                      borderRadius: 16,
+                      overflow: 'hidden',
+                      background: 'white',
+                      boxShadow: '0 4px 24px rgba(29,78,216,0.12)',
+                    }}>
+                      <div style={{ background: '#1D4ED8', color: 'white', padding: '20px 24px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                            🎉 Free Trial
+                          </span>
+                          <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 700 }}>
+                            First Month
+                          </span>
+                        </div>
+                        <div style={{ marginTop: 12 }}>
+                          <span style={{ fontSize: 42, fontWeight: 900 }}>₹0</span>
+                          <span style={{ opacity: 0.8, fontSize: 14, marginLeft: 8 }}>/ 30 days</span>
+                        </div>
+                      </div>
+                      <div style={{ padding: '20px 24px' }}>
+                        {['Donor Appointment Management', 'Patient Request Processing', 'Blood Stock Audit Log', 'Transfusion Invoice Generation', 'Donor Event Management', 'Priority Blood Matching Alerts'].map(f => (
+                          <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                            <span style={{ color: '#16A34A', fontWeight: 700, fontSize: 16 }}>✓</span>
+                            <span style={{ fontSize: 14, color: '#374151' }}>{f}</span>
+                          </div>
+                        ))}
+                        <button
+                          onClick={handleStartFreeTrial}
+                          disabled={startingFreeTrial}
+                          style={{
+                            width: '100%',
+                            marginTop: 20,
+                            background: startingFreeTrial ? '#93C5FD' : '#1D4ED8',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 10,
+                            padding: '14px 0',
+                            fontWeight: 800,
+                            fontSize: 15,
+                            cursor: startingFreeTrial ? 'not-allowed' : 'pointer',
+                            transition: 'background 0.2s',
+                          }}
+                        >
+                          {startingFreeTrial ? '⏳ Activating…' : '🚀 Start Free Trial — No Credit Card Needed'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Monthly Plan Card */}
+                    <div style={{ border: '1px solid #E5E7EB', borderRadius: 16, overflow: 'hidden', background: '#F9FAFB' }}>
+                      <div style={{ padding: '20px 24px', borderBottom: '1px solid #E5E7EB' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#6B7280' }}>
+                          💳 After Trial
+                        </span>
+                        <div style={{ marginTop: 10 }}>
+                          <span style={{ fontSize: 42, fontWeight: 900, color: '#111827' }}>₹500</span>
+                          <span style={{ color: '#6B7280', fontSize: 14, marginLeft: 8 }}>/ month</span>
+                        </div>
+                        <p style={{ fontSize: 13, color: '#6B7280', margin: '8px 0 0' }}>
+                          Billed monthly after free trial ends. Renew anytime via Subscription tab.
+                        </p>
+                      </div>
+                      <div style={{ padding: '20px 24px' }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 12 }}>All features included:</p>
+                        {['Full platform access', 'Priority support', 'No contracts — pay monthly', 'Instant subscription renewal via Razorpay'].map(f => (
+                          <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <span style={{ color: '#9CA3AF', fontWeight: 700 }}>–</span>
+                            <span style={{ fontSize: 13, color: '#6B7280' }}>{f}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trust note */}
+                  <p style={{ textAlign: 'center', fontSize: 13, color: '#9CA3AF' }}>
+                    🔒 Payments secured by Razorpay · No auto-charge after trial
+                  </p>
                 </div>
               )}
             </div>

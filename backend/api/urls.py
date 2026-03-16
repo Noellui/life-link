@@ -57,6 +57,7 @@ urlpatterns = [
     # Subscription
     path('hospital/subscription/', views.get_hospital_subscription, name='get_hospital_subscription'),
     path('hospital/subscription/renew/', views.renew_hospital_subscription, name='renew_hospital_subscription'),
+    path('hospital/subscription/free-trial/', views.create_free_trial_subscription, name='create_free_trial_subscription'),
 
     # --- RAW SQL ENDPOINTS ---
     path('requests/create-raw/', views.create_blood_request_raw, name='create_blood_request_raw'),
@@ -73,6 +74,7 @@ urlpatterns = [
     path('api/hospital/profile/', views.get_hospital_profile, name='hospital_profile'),
     path('api/hospital/subscription/', views.get_hospital_subscription, name='hospital_subscription'),
     path('api/hospital/subscription/renew/', views.renew_hospital_subscription, name='hospital_subscription_renew'),
+    path('api/hospital/subscription/free-trial/', views.create_free_trial_subscription, name='hospital_free_trial'),
 
     # Recipient profile
     path('recipient/profile/', views.get_recipient_profile, name='recipient_profile'),

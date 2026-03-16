@@ -1,0 +1,680 @@
+-- phpMyAdmin SQL Dump
+-- version 5.2.1
+-- https://www.phpmyadmin.net/
+--
+-- Host: 127.0.0.1
+-- Generation Time: Mar 11, 2026 at 10:26 PM
+-- Server version: 10.4.28-MariaDB
+-- PHP Version: 8.2.4
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Database: `lifelink`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `admin_revenue_tbl`
+--
+
+CREATE TABLE `admin_revenue_tbl` (
+  `revenue_id` int(11) NOT NULL,
+  `hospital_id` int(11) DEFAULT NULL,
+  `revenue_type` enum('Subscription','Platform Fee','Sponsorship') NOT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `transaction_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `payment_reference` varchar(100) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `appointment_tbl`
+--
+
+CREATE TABLE `appointment_tbl` (
+  `appointment_id` int(11) NOT NULL,
+  `donor_id` int(11) DEFAULT NULL,
+  `hospital_id` int(11) DEFAULT NULL,
+  `event_id` int(11) DEFAULT NULL,
+  `appointment_date` datetime NOT NULL,
+  `status` varchar(25) NOT NULL,
+  `health_questionnaire_data` text DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `appointment_tbl`
+--
+
+INSERT INTO `appointment_tbl` (`appointment_id`, `donor_id`, `hospital_id`, `event_id`, `appointment_date`, `status`, `health_questionnaire_data`) VALUES
+(1, 1001, 9001, NULL, '2026-02-15 09:30:00', 'Fulfilled', 'Healthy'),
+(2, 1001, 9001, 1, '2026-04-15 10:00:00', 'Canceled', '{}');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `blood_request_tbl`
+--
+
+CREATE TABLE `blood_request_tbl` (
+  `request_id` int(11) NOT NULL,
+  `recipient_id` int(11) NOT NULL,
+  `hospital_id` int(11) DEFAULT NULL,
+  `blood_group` varchar(5) NOT NULL,
+  `units` int(11) NOT NULL,
+  `urgency` enum('Routine','High','Critical') NOT NULL,
+  `doctor_name` varchar(50) DEFAULT NULL,
+  `status` enum('Pending','Approved','Rejected','Awaiting Payment','Fulfilled') DEFAULT 'Pending',
+  `request_date` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `blood_request_tbl`
+--
+
+INSERT INTO `blood_request_tbl` (`request_id`, `recipient_id`, `hospital_id`, `blood_group`, `units`, `urgency`, `doctor_name`, `status`, `request_date`) VALUES
+(1, 8001, 9001, 'A+', 2, 'High', 'Dr. Sharma', 'Approved', '2026-03-02 05:20:53'),
+(2, 8003, 9001, 'O+', 1, 'High', 'Dr. House', 'Pending', '2026-03-07 08:26:59'),
+(3, 8004, 9001, 'O+', 1, 'High', 'Dr. House', 'Pending', '2026-03-07 13:16:18');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `blood_storage_tbl`
+--
+
+CREATE TABLE `blood_storage_tbl` (
+  `unit_id` int(11) NOT NULL,
+  `hospital_id` int(11) NOT NULL,
+  `appointment_id` int(11) DEFAULT NULL,
+  `blood_id` int(11) DEFAULT NULL,
+  `quantity` int(11) NOT NULL,
+  `expiry_date` date NOT NULL,
+  `status` varchar(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `blood_storage_tbl`
+--
+
+INSERT INTO `blood_storage_tbl` (`unit_id`, `hospital_id`, `appointment_id`, `blood_id`, `quantity`, `expiry_date`, `status`) VALUES
+(2, 9001, NULL, 1, 12, '2026-05-01', 'Available'),
+(3, 9001, NULL, 2, 3, '2026-04-20', 'Available'),
+(4, 9001, NULL, 3, 25, '2026-05-15', 'Available'),
+(5, 9001, NULL, 5, 8, '2026-04-25', 'Available'),
+(6, 9001, NULL, 6, 2, '2026-04-15', 'Available'),
+(7, 9001, NULL, 7, 30, '2026-05-05', 'Available'),
+(8, 9001, NULL, 8, 5, '2026-04-18', 'Available');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `blood_type_tbl`
+--
+
+CREATE TABLE `blood_type_tbl` (
+  `blood_id` int(11) NOT NULL,
+  `blood_type` varchar(5) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `blood_type_tbl`
+--
+
+INSERT INTO `blood_type_tbl` (`blood_id`, `blood_type`) VALUES
+(1, 'A+'),
+(2, 'A-'),
+(3, 'B+'),
+(4, 'B-'),
+(5, 'AB+'),
+(6, 'AB-'),
+(7, 'O+'),
+(8, 'O-');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `donor_interest_log`
+--
+
+CREATE TABLE `donor_interest_log` (
+  `id` int(11) NOT NULL,
+  `donor_id` int(11) NOT NULL,
+  `request_id` int(11) NOT NULL,
+  `donor_name` varchar(100) NOT NULL,
+  `blood_type` varchar(5) NOT NULL,
+  `expressed_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `donor_tbl`
+--
+
+CREATE TABLE `donor_tbl` (
+  `donor_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `blood_id` int(11) DEFAULT NULL,
+  `address` varchar(100) NOT NULL,
+  `date_of_birth` date NOT NULL,
+  `weight` int(11) NOT NULL,
+  `registration_date` datetime DEFAULT NULL,
+  `gender` varchar(10) DEFAULT NULL,
+  `city` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `donor_tbl`
+--
+
+INSERT INTO `donor_tbl` (`donor_id`, `user_id`, `blood_id`, `address`, `date_of_birth`, `weight`, `registration_date`, `gender`, `city`) VALUES
+(1001, 1001, 7, 'Flat 101, Sky Heights', '1995-06-20', 75, '2026-03-02 05:20:53', 'Male', 'Ahmedabad'),
+(1002, 1002, 1, 'Sector 5, Green Park', '1998-12-10', 62, '2026-03-02 05:20:53', 'Female', 'Ahmedabad'),
+(1007, 9007, 7, '', '2000-01-01', 65, '2026-03-06 22:33:36', 'Male', 'Vadodara');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `event_tbl`
+--
+
+CREATE TABLE `event_tbl` (
+  `event_id` int(11) NOT NULL,
+  `event_title` varchar(100) NOT NULL,
+  `location` varchar(255) NOT NULL,
+  `event_date` datetime DEFAULT NULL,
+  `start_time` varchar(20) DEFAULT NULL,
+  `end_time` varchar(20) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `seats_available` int(11) DEFAULT 100,
+  `hospital_id` int(11) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `event_tbl`
+--
+
+INSERT INTO `event_tbl` (`event_id`, `event_title`, `location`, `event_date`, `start_time`, `end_time`, `description`, `seats_available`, `hospital_id`) VALUES
+(1, 'Spring Life Drive 2026', 'Ahmedabad City Hall', '2026-04-15 10:00:00', '10:00 AM', '04:00 PM', 'Join our quarterly blood donation drive.', 100, 9001);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `feedback_tbl`
+--
+
+CREATE TABLE `feedback_tbl` (
+  `feedback_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `user_role` enum('Admin','Hospital','Donor','Recipient') NOT NULL,
+  `comment` text NOT NULL,
+  `submission_date` datetime NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `hospital_registration_tbl`
+--
+
+CREATE TABLE `hospital_registration_tbl` (
+  `hospital_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `hospital_name` varchar(100) NOT NULL,
+  `address` varchar(100) NOT NULL,
+  `contact_email` varchar(50) NOT NULL,
+  `license_no` varchar(50) DEFAULT NULL,
+  `hospital_type` varchar(20) DEFAULT NULL,
+  `website` varchar(100) DEFAULT NULL,
+  `city` varchar(50) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `hospital_registration_tbl`
+--
+
+INSERT INTO `hospital_registration_tbl` (`hospital_id`, `user_id`, `hospital_name`, `address`, `contact_email`, `license_no`, `hospital_type`, `website`, `city`) VALUES
+(9001, 9001, 'Metro Care Hospital', 'Main St, Ahmedabad', 'metro@hospital.com', 'GOV-202', 'Government', 'www.metrocare.in', 'Ahmedabad');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `hospital_subscription_tbl`
+--
+
+CREATE TABLE `hospital_subscription_tbl` (
+  `subscription_id` int(11) NOT NULL,
+  `hospital_id` int(11) NOT NULL,
+  `plan_name` varchar(50) NOT NULL DEFAULT 'Basic',
+  `amount_paid` decimal(10,2) NOT NULL,
+  `start_date` date NOT NULL,
+  `end_date` date NOT NULL,
+  `status` enum('Active','Expired','Pending') DEFAULT 'Active'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `invoice_no_tbl`
+--
+
+CREATE TABLE `invoice_no_tbl` (
+  `bill_no` int(11) NOT NULL,
+  `appointment_id` int(11) DEFAULT NULL,
+  `donor_id` int(11) DEFAULT NULL,
+  `blood_id` int(11) DEFAULT NULL,
+  `quantity` int(11) NOT NULL,
+  `rate` decimal(10,2) NOT NULL,
+  `platform_fee` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `blood_received_by` varchar(100) DEFAULT NULL,
+  `mobile_no` varchar(10) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `payment_tbl`
+--
+
+CREATE TABLE `payment_tbl` (
+  `payment_id` int(11) NOT NULL,
+  `recipient_id` int(11) DEFAULT NULL,
+  `bill_no` int(11) DEFAULT NULL,
+  `amount` decimal(10,2) NOT NULL,
+  `payment_date` datetime NOT NULL,
+  `status` varchar(20) NOT NULL,
+  `mode` enum('card','online') DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `recipient_tbl`
+--
+
+CREATE TABLE `recipient_tbl` (
+  `recipient_id` int(11) NOT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `full_name` varchar(100) DEFAULT NULL,
+  `blood_id` int(11) DEFAULT NULL,
+  `contact_number` varchar(10) NOT NULL,
+  `address` varchar(100) NOT NULL,
+  `hospital_id` int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `recipient_tbl`
+--
+
+INSERT INTO `recipient_tbl` (`recipient_id`, `user_id`, `full_name`, `blood_id`, `contact_number`, `address`, `hospital_id`) VALUES
+(8001, 8001, 'Alice Brown', 1, '9000011111', 'Ward 12, Metro Care', 9001),
+(8003, 9011, 'Joel Louis', 7, '0000000000', 'Hospital Admission', NULL),
+(8004, 9012, 'Test Patient', 7, '0000000000', 'Hospital Admission', NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `transaction_log_tbl`
+--
+
+CREATE TABLE `transaction_log_tbl` (
+  `log_id` int(11) NOT NULL,
+  `type` enum('IN','OUT') NOT NULL,
+  `blood_group` varchar(5) NOT NULL,
+  `quantity` int(11) NOT NULL,
+  `entity_name` varchar(100) NOT NULL,
+  `reason` varchar(255) NOT NULL,
+  `transaction_date` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_registration_tbl`
+--
+
+CREATE TABLE `user_registration_tbl` (
+  `User_id` int(11) NOT NULL,
+  `full_name` varchar(100) DEFAULT NULL,
+  `email` varchar(100) NOT NULL,
+  `contact_no` varchar(10) NOT NULL,
+  `password` varchar(100) DEFAULT NULL,
+  `user_role` enum('Admin','Hospital','Donor','Recipient') DEFAULT NULL,
+  `status` varchar(10) DEFAULT 'Active',
+  `verification_token` varchar(255) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `user_registration_tbl`
+--
+
+INSERT INTO `user_registration_tbl` (`User_id`, `full_name`, `email`, `contact_no`, `password`, `user_role`, `status`, `verification_token`) VALUES
+(100, 'System Administrator', 'admin@lifelink.com', '9999999999', '@Nkp12345', 'Admin', 'Active', NULL),
+(1001, 'John Doe', 'john.donor@test.com', '9876543210', '@Nkp12345', 'Donor', 'Active', NULL),
+(1002, 'Jane Smith', 'jane.donor@test.com', '9876543211', '@Nkp12345', 'Donor', 'Active', NULL),
+(8001, 'Alice Brown', 'alice.recipient@test.com', '9000011111', '@Nkp12345', 'Recipient', 'Active', NULL),
+(9001, 'Metro Care Hospital', 'metro@hospital.com', '0265222333', '@Nkp12345', 'Hospital', 'Active', NULL),
+(9007, 'Noel Louis', 'noellouis2005@gmail.com', '9484468668', '43CFHF', 'Donor', 'Active', NULL),
+(9011, 'Joel Louis', 'joellouis2005@gmail.com', '0000000000', '8CN6JU', 'Recipient', 'Active', NULL),
+(9012, 'Test Patient', 'anjali@test.com', '0000000000', '4NRTYM', 'Recipient', 'Active', NULL);
+
+--
+-- Indexes for dumped tables
+--
+
+--
+-- Indexes for table `admin_revenue_tbl`
+--
+ALTER TABLE `admin_revenue_tbl`
+  ADD PRIMARY KEY (`revenue_id`),
+  ADD KEY `hospital_id` (`hospital_id`);
+
+--
+-- Indexes for table `appointment_tbl`
+--
+ALTER TABLE `appointment_tbl`
+  ADD PRIMARY KEY (`appointment_id`),
+  ADD KEY `donor_id` (`donor_id`),
+  ADD KEY `hospital_id` (`hospital_id`),
+  ADD KEY `fk_event` (`event_id`);
+
+--
+-- Indexes for table `blood_request_tbl`
+--
+ALTER TABLE `blood_request_tbl`
+  ADD PRIMARY KEY (`request_id`),
+  ADD KEY `recipient_id` (`recipient_id`);
+
+--
+-- Indexes for table `blood_storage_tbl`
+--
+ALTER TABLE `blood_storage_tbl`
+  ADD PRIMARY KEY (`unit_id`),
+  ADD KEY `appointment_id` (`appointment_id`),
+  ADD KEY `blood_id` (`blood_id`),
+  ADD KEY `fk_storage_hospital` (`hospital_id`);
+
+--
+-- Indexes for table `blood_type_tbl`
+--
+ALTER TABLE `blood_type_tbl`
+  ADD PRIMARY KEY (`blood_id`);
+
+--
+-- Indexes for table `donor_interest_log`
+--
+ALTER TABLE `donor_interest_log`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `donor_id` (`donor_id`),
+  ADD KEY `request_id` (`request_id`);
+
+--
+-- Indexes for table `donor_tbl`
+--
+ALTER TABLE `donor_tbl`
+  ADD PRIMARY KEY (`donor_id`),
+  ADD KEY `user_id` (`user_id`),
+  ADD KEY `blood_id` (`blood_id`);
+
+--
+-- Indexes for table `event_tbl`
+--
+ALTER TABLE `event_tbl`
+  ADD PRIMARY KEY (`event_id`);
+
+--
+-- Indexes for table `feedback_tbl`
+--
+ALTER TABLE `feedback_tbl`
+  ADD PRIMARY KEY (`feedback_id`),
+  ADD KEY `user_id` (`user_id`);
+
+--
+-- Indexes for table `hospital_registration_tbl`
+--
+ALTER TABLE `hospital_registration_tbl`
+  ADD PRIMARY KEY (`hospital_id`),
+  ADD KEY `user_id` (`user_id`);
+
+--
+-- Indexes for table `hospital_subscription_tbl`
+--
+ALTER TABLE `hospital_subscription_tbl`
+  ADD PRIMARY KEY (`subscription_id`),
+  ADD KEY `hospital_id` (`hospital_id`);
+
+--
+-- Indexes for table `invoice_no_tbl`
+--
+ALTER TABLE `invoice_no_tbl`
+  ADD PRIMARY KEY (`bill_no`),
+  ADD KEY `appointment_id` (`appointment_id`),
+  ADD KEY `donor_id` (`donor_id`),
+  ADD KEY `blood_id` (`blood_id`);
+
+--
+-- Indexes for table `payment_tbl`
+--
+ALTER TABLE `payment_tbl`
+  ADD PRIMARY KEY (`payment_id`),
+  ADD KEY `recipient_id` (`recipient_id`),
+  ADD KEY `bill_no` (`bill_no`);
+
+--
+-- Indexes for table `recipient_tbl`
+--
+ALTER TABLE `recipient_tbl`
+  ADD PRIMARY KEY (`recipient_id`),
+  ADD KEY `user_id` (`user_id`),
+  ADD KEY `blood_id` (`blood_id`),
+  ADD KEY `hospital_id` (`hospital_id`);
+
+--
+-- Indexes for table `transaction_log_tbl`
+--
+ALTER TABLE `transaction_log_tbl`
+  ADD PRIMARY KEY (`log_id`);
+
+--
+-- Indexes for table `user_registration_tbl`
+--
+ALTER TABLE `user_registration_tbl`
+  ADD PRIMARY KEY (`User_id`),
+  ADD UNIQUE KEY `email` (`email`);
+
+--
+-- AUTO_INCREMENT for dumped tables
+--
+
+--
+-- AUTO_INCREMENT for table `admin_revenue_tbl`
+--
+ALTER TABLE `admin_revenue_tbl`
+  MODIFY `revenue_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `appointment_tbl`
+--
+ALTER TABLE `appointment_tbl`
+  MODIFY `appointment_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `blood_request_tbl`
+--
+ALTER TABLE `blood_request_tbl`
+  MODIFY `request_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `blood_storage_tbl`
+--
+ALTER TABLE `blood_storage_tbl`
+  MODIFY `unit_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `donor_interest_log`
+--
+ALTER TABLE `donor_interest_log`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `donor_tbl`
+--
+ALTER TABLE `donor_tbl`
+  MODIFY `donor_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1008;
+
+--
+-- AUTO_INCREMENT for table `event_tbl`
+--
+ALTER TABLE `event_tbl`
+  MODIFY `event_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `feedback_tbl`
+--
+ALTER TABLE `feedback_tbl`
+  MODIFY `feedback_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `hospital_registration_tbl`
+--
+ALTER TABLE `hospital_registration_tbl`
+  MODIFY `hospital_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9002;
+
+--
+-- AUTO_INCREMENT for table `hospital_subscription_tbl`
+--
+ALTER TABLE `hospital_subscription_tbl`
+  MODIFY `subscription_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `invoice_no_tbl`
+--
+ALTER TABLE `invoice_no_tbl`
+  MODIFY `bill_no` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `payment_tbl`
+--
+ALTER TABLE `payment_tbl`
+  MODIFY `payment_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `recipient_tbl`
+--
+ALTER TABLE `recipient_tbl`
+  MODIFY `recipient_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8005;
+
+--
+-- AUTO_INCREMENT for table `transaction_log_tbl`
+--
+ALTER TABLE `transaction_log_tbl`
+  MODIFY `log_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `user_registration_tbl`
+--
+ALTER TABLE `user_registration_tbl`
+  MODIFY `User_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9013;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `admin_revenue_tbl`
+--
+ALTER TABLE `admin_revenue_tbl`
+  ADD CONSTRAINT `admin_revenue_ibfk_1` FOREIGN KEY (`hospital_id`) REFERENCES `hospital_registration_tbl` (`hospital_id`);
+
+--
+-- Constraints for table `appointment_tbl`
+--
+ALTER TABLE `appointment_tbl`
+  ADD CONSTRAINT `appointment_tbl_ibfk_1` FOREIGN KEY (`donor_id`) REFERENCES `donor_tbl` (`donor_id`),
+  ADD CONSTRAINT `appointment_tbl_ibfk_2` FOREIGN KEY (`hospital_id`) REFERENCES `hospital_registration_tbl` (`hospital_id`),
+  ADD CONSTRAINT `fk_event` FOREIGN KEY (`event_id`) REFERENCES `event_tbl` (`event_id`);
+
+--
+-- Constraints for table `blood_request_tbl`
+--
+ALTER TABLE `blood_request_tbl`
+  ADD CONSTRAINT `blood_request_tbl_ibfk_1` FOREIGN KEY (`recipient_id`) REFERENCES `recipient_tbl` (`recipient_id`);
+
+--
+-- Constraints for table `blood_storage_tbl`
+--
+ALTER TABLE `blood_storage_tbl`
+  ADD CONSTRAINT `blood_storage_tbl_ibfk_1` FOREIGN KEY (`appointment_id`) REFERENCES `appointment_tbl` (`appointment_id`),
+  ADD CONSTRAINT `blood_storage_tbl_ibfk_2` FOREIGN KEY (`blood_id`) REFERENCES `blood_type_tbl` (`blood_id`),
+  ADD CONSTRAINT `fk_storage_hospital` FOREIGN KEY (`hospital_id`) REFERENCES `hospital_registration_tbl` (`hospital_id`);
+
+--
+-- Constraints for table `donor_interest_log`
+--
+ALTER TABLE `donor_interest_log`
+  ADD CONSTRAINT `fk_donor_interest` FOREIGN KEY (`donor_id`) REFERENCES `donor_tbl` (`donor_id`),
+  ADD CONSTRAINT `fk_request_interest` FOREIGN KEY (`request_id`) REFERENCES `blood_request_tbl` (`request_id`);
+
+--
+-- Constraints for table `donor_tbl`
+--
+ALTER TABLE `donor_tbl`
+  ADD CONSTRAINT `donor_tbl_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user_registration_tbl` (`User_id`),
+  ADD CONSTRAINT `donor_tbl_ibfk_2` FOREIGN KEY (`blood_id`) REFERENCES `blood_type_tbl` (`blood_id`);
+
+--
+-- Constraints for table `feedback_tbl`
+--
+ALTER TABLE `feedback_tbl`
+  ADD CONSTRAINT `feedback_tbl_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user_registration_tbl` (`User_id`);
+
+--
+-- Constraints for table `hospital_registration_tbl`
+--
+ALTER TABLE `hospital_registration_tbl`
+  ADD CONSTRAINT `hospital_registration_tbl_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user_registration_tbl` (`User_id`);
+
+--
+-- Constraints for table `hospital_subscription_tbl`
+--
+ALTER TABLE `hospital_subscription_tbl`
+  ADD CONSTRAINT `hospital_subscription_ibfk_1` FOREIGN KEY (`hospital_id`) REFERENCES `hospital_registration_tbl` (`hospital_id`);
+
+--
+-- Constraints for table `invoice_no_tbl`
+--
+ALTER TABLE `invoice_no_tbl`
+  ADD CONSTRAINT `invoice_no_tbl_ibfk_1` FOREIGN KEY (`appointment_id`) REFERENCES `appointment_tbl` (`appointment_id`),
+  ADD CONSTRAINT `invoice_no_tbl_ibfk_2` FOREIGN KEY (`donor_id`) REFERENCES `donor_tbl` (`donor_id`),
+  ADD CONSTRAINT `invoice_no_tbl_ibfk_3` FOREIGN KEY (`blood_id`) REFERENCES `blood_type_tbl` (`blood_id`);
+
+--
+-- Constraints for table `payment_tbl`
+--
+ALTER TABLE `payment_tbl`
+  ADD CONSTRAINT `payment_tbl_ibfk_1` FOREIGN KEY (`recipient_id`) REFERENCES `recipient_tbl` (`recipient_id`),
+  ADD CONSTRAINT `payment_tbl_ibfk_2` FOREIGN KEY (`bill_no`) REFERENCES `invoice_no_tbl` (`bill_no`);
+
+--
+-- Constraints for table `recipient_tbl`
+--
+ALTER TABLE `recipient_tbl`
+  ADD CONSTRAINT `recipient_tbl_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `user_registration_tbl` (`User_id`),
+  ADD CONSTRAINT `recipient_tbl_ibfk_2` FOREIGN KEY (`blood_id`) REFERENCES `blood_type_tbl` (`blood_id`),
+  ADD CONSTRAINT `recipient_tbl_ibfk_3` FOREIGN KEY (`hospital_id`) REFERENCES `hospital_registration_tbl` (`hospital_id`);
+COMMIT;
+
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
