@@ -29,6 +29,9 @@ import MyBills from './pages/MyBills';
 import RecipientProfile from './pages/RecipientProfile';
 import HospitalProfile from './pages/HospitalProfile';
 import FinanceReport from './pages/FinanceReport';
+import InventoryReport from './pages/InventoryReport';
+import UserDemographicsReport from './pages/UserDemographicsReport';
+import SupplyDemandReport from './pages/SupplyDemandReport';
 
 const BASE_URL = 'http://127.0.0.1:8000';
 
@@ -132,6 +135,9 @@ function App() {
           <Route path="/hospital-profile" element={user?.role === 'Hospital' ? <HospitalProfile /> : <Navigate to="/login" />} />
 
           <Route path="/admin/report/finance" element={<FinanceReport />} />
+          <Route path="/admin/report/inventory" element={<InventoryReport />} />
+          <Route path="/admin/report/users" element={<UserDemographicsReport />} />
+          <Route path="/admin/report/supply-demand" element={<SupplyDemandReport />} />
 
           {/* --- FALLBACK --- */}
           <Route path="*" element={<Navigate to="/" replace />} />

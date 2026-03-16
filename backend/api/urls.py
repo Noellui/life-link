@@ -14,6 +14,9 @@ urlpatterns = [
     path('admin/events/<int:event_id>/', views.delete_event_view, name='delete_event'),
     path('admin/events/', views.event_list, name='admin_event_list'),
     path('admin/finance/', views.admin_finance_report, name='admin_finance_report'),
+    path('admin/inventory-report/', views.admin_inventory_report, name='admin_inventory_report'),
+    path('admin/demographics-report/', views.admin_demographics_report, name='admin_demographics_report'),
+    path('admin/supply-demand-report/', views.admin_supply_demand_report, name='admin_supply_demand_report'),
 
     # --- DONOR DASHBOARD & PROFILE ---
     path('donor/stats/', views.donor_dashboard_stats, name='donor_stats'),

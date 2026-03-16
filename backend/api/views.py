@@ -2235,3 +2235,300 @@ def admin_finance_report(request):
     except Exception as e:
         print(f"Finance Report Error: {e}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_inventory_report(request):
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    # Default to a very broad range if no dates are provided for Inflow/Outflow tracking
+    date_filter_appt = ""
+    date_filter_req = ""
+    params_date = []
+
+    if start_date and end_date:
+        date_filter_appt = "AND appointment_date >= %s AND appointment_date <= %s"
+        date_filter_req = "AND request_date >= %s AND request_date <= %s"
+        params_date.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+
+    try:
+        with connection.cursor() as cursor:
+            # 1. Total Available Stock
+            cursor.execute("SELECT COALESCE(SUM(quantity), 0) FROM blood_storage_tbl WHERE status = 'Available'")
+            total_units = int(cursor.fetchone()[0])
+
+            # 2. Stock by Blood Group
+            cursor.execute("""
+                SELECT bt.blood_type, COALESCE(SUM(bs.quantity), 0)
+                FROM blood_type_tbl bt
+                LEFT JOIN blood_storage_tbl bs ON bt.blood_id = bs.blood_id AND bs.status = 'Available'
+                GROUP BY bt.blood_id, bt.blood_type
+                ORDER BY bt.blood_id
+            """)
+            stock_by_group = [{"bloodGroup": row[0], "units": int(row[1])} for row in cursor.fetchall()]
+
+            # 3. Stock Expiring in the Next 7 Days (Wastage Alert)
+            cursor.execute("""
+                SELECT bt.blood_type, bs.quantity, bs.expiry_date, h.hospital_name, bs.unit_id
+                FROM blood_storage_tbl bs
+                JOIN blood_type_tbl bt ON bs.blood_id = bt.blood_id
+                JOIN hospital_registration_tbl h ON bs.hospital_id = h.hospital_id
+                WHERE bs.status = 'Available' AND bs.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+                ORDER BY bs.expiry_date ASC
+            """)
+            expiring_soon = [{
+                "bloodGroup": row[0], "units": int(row[1]),
+                "expiryDate": row[2].strftime('%Y-%m-%d') if row[2] else 'N/A',
+                "hospital": row[3], "unitId": row[4]
+            } for row in cursor.fetchall()]
+
+            # 4. Stock Distribution by Hospital
+            cursor.execute("""
+                SELECT h.hospital_name, COALESCE(SUM(bs.quantity), 0) as total_stock
+                FROM hospital_registration_tbl h
+                JOIN blood_storage_tbl bs ON h.hospital_id = bs.hospital_id AND bs.status = 'Available'
+                GROUP BY h.hospital_id, h.hospital_name
+                ORDER BY total_stock DESC
+            """)
+            hospital_stock = [{"hospitalName": row[0], "units": int(row[1])} for row in cursor.fetchall()]
+
+            # 5. Inflow (Donations) vs Outflow (Fulfilled Requests) based on Date Range
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM appointment_tbl
+                WHERE status IN ('Fulfilled', 'Transfusion Done') {date_filter_appt}
+            """, params_date if params_date else [])
+            inflow = int(cursor.fetchone()[0])
+
+            cursor.execute(f"""
+                SELECT COALESCE(SUM(units), 0) FROM blood_request_tbl
+                WHERE status = 'Fulfilled' {date_filter_req}
+            """, params_date if params_date else [])
+            outflow = int(cursor.fetchone()[0])
+
+        return JsonResponse({
+            "totalUnits": total_units,
+            "stockByGroup": stock_by_group,
+            "expiringSoon": expiring_soon,
+            "hospitalStock": hospital_stock,
+            "inflow": inflow,
+            "outflow": outflow
+        })
+
+    except Exception as e:
+        print(f"Inventory Report Error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_demographics_report(request):
+    try:
+        with connection.cursor() as cursor:
+            # 1. Total Users by Role
+            cursor.execute("""
+                SELECT user_role, COUNT(*)
+                FROM user_registration_tbl
+                WHERE status != 'Banned'
+                GROUP BY user_role
+            """)
+            role_rows = cursor.fetchall()
+            roles_distribution = [{"role": row[0], "count": row[1]} for row in role_rows]
+
+            # Extract specific totals for quick summary
+            total_donors = sum(r["count"] for r in roles_distribution if r["role"] == "Donor")
+            total_recipients = sum(r["count"] for r in roles_distribution if r["role"] == "Recipient")
+            total_hospitals = sum(r["count"] for r in roles_distribution if r["role"] == "Hospital")
+
+            # 2. Donor Gender Distribution
+            cursor.execute("""
+                SELECT COALESCE(gender, 'Not Specified'), COUNT(*)
+                FROM donor_tbl
+                GROUP BY gender
+            """)
+            gender_rows = cursor.fetchall()
+            gender_distribution = [{"gender": row[0], "count": row[1]} for row in gender_rows]
+
+            # 3. Donor City Distribution
+            cursor.execute("""
+                SELECT COALESCE(city, 'Unknown'), COUNT(*) as city_count
+                FROM donor_tbl
+                GROUP BY city
+                ORDER BY city_count DESC
+            """)
+            city_rows = cursor.fetchall()
+            city_distribution = [{"city": row[0], "count": row[1]} for row in city_rows]
+
+            # 4. Age Distribution (Calculate from DOB)
+            cursor.execute("SELECT date_of_birth FROM donor_tbl WHERE date_of_birth IS NOT NULL")
+            dob_rows = cursor.fetchall()
+
+            age_buckets = {"18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55+": 0}
+            today = datetime.date.today()
+
+            for row in dob_rows:
+                dob = row[0]
+                if dob:
+                    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+                    if age < 25: age_buckets["18-24"] += 1
+                    elif age < 35: age_buckets["25-34"] += 1
+                    elif age < 45: age_buckets["35-44"] += 1
+                    elif age < 55: age_buckets["45-54"] += 1
+                    else: age_buckets["55+"] += 1
+
+            age_distribution = [{"ageGroup": k, "count": v} for k, v in age_buckets.items() if v > 0]
+
+            # 5. Donor Blood Type Distribution
+            cursor.execute("""
+                SELECT bt.blood_type, COUNT(d.donor_id)
+                FROM blood_type_tbl bt
+                LEFT JOIN donor_tbl d ON bt.blood_id = d.blood_id
+                GROUP BY bt.blood_id, bt.blood_type
+                ORDER BY bt.blood_id
+            """)
+            blood_rows = cursor.fetchall()
+            blood_distribution = [{"bloodGroup": row[0], "count": row[1]} for row in blood_rows]
+
+        return JsonResponse({
+            "summary": {
+                "totalDonors": total_donors,
+                "totalRecipients": total_recipients,
+                "totalHospitals": total_hospitals,
+            },
+            "roles": roles_distribution,
+            "gender": gender_distribution,
+            "city": city_distribution,
+            "age": age_distribution,
+            "blood": blood_distribution
+        })
+
+    except Exception as e:
+        print(f"Demographics Report Error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_supply_demand_report(request):
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    date_filter_req = ""
+    date_filter_appt = ""
+    params_req = []
+    params_appt = []
+
+    if start_date and end_date:
+        date_filter_req = "AND br.request_date >= %s AND br.request_date <= %s"
+        params_req.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+        date_filter_appt = "AND a.appointment_date >= %s AND a.appointment_date <= %s"
+        params_appt.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+
+    try:
+        with connection.cursor() as cursor:
+            # 1. Demand by Blood Group (Total requested units)
+            cursor.execute(f"""
+                SELECT br.blood_group, COALESCE(SUM(br.units), 0) as total_demand
+                FROM blood_request_tbl br
+                WHERE 1=1 {date_filter_req}
+                GROUP BY br.blood_group
+                ORDER BY total_demand DESC
+            """, params_req)
+            demand_rows = cursor.fetchall()
+            demand_by_group = [{
+                "bloodGroup": row[0], "demandUnits": int(row[1])
+            } for row in demand_rows]
+
+            # 2. Supply by Blood Group (Available stock)
+            cursor.execute("""
+                SELECT bt.blood_type, COALESCE(SUM(bs.quantity), 0)
+                FROM blood_type_tbl bt
+                LEFT JOIN blood_storage_tbl bs ON bt.blood_id = bs.blood_id AND bs.status = 'Available'
+                GROUP BY bt.blood_id, bt.blood_type
+                ORDER BY bt.blood_id
+            """)
+            supply_rows = cursor.fetchall()
+            supply_map = {row[0]: int(row[1]) for row in supply_rows}
+
+            # Merge supply into demand list for a combined view
+            supply_demand = []
+            all_groups = set([d["bloodGroup"] for d in demand_by_group] + list(supply_map.keys()))
+            for bg in sorted(all_groups):
+                demand = next((d["demandUnits"] for d in demand_by_group if d["bloodGroup"] == bg), 0)
+                supply = supply_map.get(bg, 0)
+                gap = supply - demand
+                supply_demand.append({
+                    "bloodGroup": bg,
+                    "supply": supply,
+                    "demand": demand,
+                    "gap": gap,
+                    "status": "Surplus" if gap > 0 else ("Balanced" if gap == 0 else "Deficit")
+                })
+
+            # 3. Request Status Breakdown (Fulfillment Rate)
+            cursor.execute(f"""
+                SELECT br.status, COUNT(*) as cnt
+                FROM blood_request_tbl br
+                WHERE 1=1 {date_filter_req}
+                GROUP BY br.status
+            """, params_req)
+            status_rows = cursor.fetchall()
+            request_statuses = [{"status": row[0], "count": int(row[1])} for row in status_rows]
+
+            total_requests = sum(s["count"] for s in request_statuses)
+            fulfilled = sum(s["count"] for s in request_statuses if s["status"] in ('Fulfilled', 'Awaiting Payment'))
+            fulfillment_rate = round((fulfilled / total_requests * 100), 1) if total_requests > 0 else 0
+
+            # 4. Top Demanding Hospitals
+            cursor.execute(f"""
+                SELECT h.hospital_name, COUNT(br.request_id) as req_count, COALESCE(SUM(br.units), 0) as total_units
+                FROM blood_request_tbl br
+                JOIN hospital_registration_tbl h ON br.hospital_id = h.hospital_id
+                WHERE 1=1 {date_filter_req}
+                GROUP BY h.hospital_id, h.hospital_name
+                ORDER BY total_units DESC
+                LIMIT 10
+            """, params_req)
+            hosp_rows = cursor.fetchall()
+            top_hospitals = [{
+                "hospitalName": row[0], "requestCount": int(row[1]), "totalUnits": int(row[2])
+            } for row in hosp_rows]
+
+            # 5. Monthly Request Trend (Last 6 Months)
+            cursor.execute("""
+                SELECT DATE_FORMAT(request_date, '%%Y-%%m') as month, COUNT(*) as cnt, COALESCE(SUM(units), 0) as units
+                FROM blood_request_tbl
+                WHERE request_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                GROUP BY month
+                ORDER BY month ASC
+            """)
+            trend_rows = cursor.fetchall()
+            monthly_trend = [{
+                "month": row[0], "requests": int(row[1]), "units": int(row[2])
+            } for row in trend_rows]
+
+            # 6. Donation Supply Trend (Last 6 Months)
+            cursor.execute("""
+                SELECT DATE_FORMAT(appointment_date, '%%Y-%%m') as month, COUNT(*) as donations
+                FROM appointment_tbl
+                WHERE status IN ('Fulfilled', 'Transfusion Done')
+                  AND appointment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+                GROUP BY month
+                ORDER BY month ASC
+            """)
+            donation_trend_rows = cursor.fetchall()
+            donation_trend = [{
+                "month": row[0], "donations": int(row[1])
+            } for row in donation_trend_rows]
+
+        return JsonResponse({
+            "supplyDemand": supply_demand,
+            "requestStatuses": request_statuses,
+            "totalRequests": total_requests,
+            "fulfillmentRate": fulfillment_rate,
+            "topHospitals": top_hospitals,
+            "monthlyTrend": monthly_trend,
+            "donationTrend": donation_trend
+        })
+
+    except Exception as e:
+        print(f"Supply Demand Report Error: {e}")
+        return JsonResponse({'error': str(e)}, status=500)

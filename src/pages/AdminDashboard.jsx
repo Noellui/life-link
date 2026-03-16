@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 const AdminDashboard = ({ onLogout }) => {
   const navigate = useNavigate();
@@ -14,7 +12,6 @@ const AdminDashboard = ({ onLogout }) => {
   const [events, setEvents] = useState([]);
   const [inventoryStats, setInventoryStats] = useState([]);
   const [users, setUsers] = useState([]);
-  const [monthlyActivity, setMonthlyActivity] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Dashboard Card Stats
@@ -35,7 +32,6 @@ const AdminDashboard = ({ onLogout }) => {
         const data = await statsResponse.json();
         setInventoryStats(data.inventory || []);
         setDashboardStats(data.stats || { donors: 0, recipients: 0, hospitals: 0, total_units: 0, pending_requests: 0 });
-        if (data.monthly_activity) setMonthlyActivity(data.monthly_activity);
       }
 
       const usersResponse = await fetch('http://127.0.0.1:8000/api/admin/users/');
@@ -98,48 +94,6 @@ const AdminDashboard = ({ onLogout }) => {
     }
   };
 
-  const handleDownloadReport = () => {
-    const doc = new jsPDF();
-    const dateStr = new Date().toLocaleDateString();
-
-    doc.setFontSize(20);
-    doc.setTextColor(220, 38, 38);
-    doc.text("LifeLink System Analytics Report", 14, 22);
-
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Generated on: ${dateStr}`, 14, 30);
-
-    autoTable(doc, {
-      startY: 40,
-      head: [['Category', 'Count']],
-      body: [
-        ['Total Donors', dashboardStats.donors],
-        ['Total Hospitals', dashboardStats.hospitals],
-        ['Units in Storage', dashboardStats.total_units],
-        ['Pending Requests', dashboardStats.pending_requests],
-      ],
-      theme: 'striped'
-    });
-
-    doc.text("Live Blood Inventory", 14, doc.lastAutoTable.finalY + 10);
-
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 15,
-      head: [['Blood Group', 'Units', 'Status']],
-      body: inventoryStats.map(item => [item.type, item.count, item.status]),
-      headStyles: { fillColor: [185, 28, 28] }
-    });
-
-    doc.save(`LifeLink_Report_${dateStr.replace(/\//g, '-')}.pdf`);
-  };
-  const getProgressColor = (count, capacity) => {
-    const p = (count / capacity) * 100;
-    if (p < 20) return 'bg-red-600';
-    if (p < 40) return 'bg-yellow-500';
-    return 'bg-green-600';
-  };
-
   // --- 4. RENDERERS ---
 
   if (loading) {
@@ -192,57 +146,6 @@ const AdminDashboard = ({ onLogout }) => {
             )}
           </ul>
         )}
-      </div>
-    </div>
-  );
-
-  const renderReports = () => (
-    <div className="space-y-8 animate-fade-in-up">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800">System Analytics & Reports</h2>
-        <button onClick={handleDownloadReport} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-700">Export as PDF</button>
-      </div>
-
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <h3 className="font-bold text-lg text-gray-800 mb-6">🩸 Live Blood Inventory (Real-Time)</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-          {inventoryStats.map((item) => (
-            <div key={item.type}>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-bold text-gray-700">{item.type} Blood</span>
-                <span className={`font-bold ${item.status === 'Critical' ? 'text-red-600' : item.status === 'Low' ? 'text-yellow-600' : 'text-green-600'}`}>
-                  {item.count} Units ({item.status})
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-3">
-                <div className={`h-3 rounded-full ${getProgressColor(item.count, item.capacity)}`} style={{ width: `${(item.count / item.capacity) * 100}%` }}></div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Month</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Donations</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Requests</th>
-              <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Net Balance</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {monthlyActivity.map((row, idx) => (
-              <tr key={idx} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.month}</td>
-                <td className="px-6 py-4 text-sm text-green-600 font-medium">+{row.donations}</td>
-                <td className="px-6 py-4 text-sm text-blue-600 font-medium">{row.requests}</td>
-                <td className={`px-6 py-4 text-sm font-bold ${row.outcome.startsWith('-') ? 'text-red-600' : 'text-gray-900'}`}>{row.outcome} Units</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   );
@@ -331,7 +234,6 @@ const AdminDashboard = ({ onLogout }) => {
             <h1 className="text-2xl font-black text-red-500">🛡️ ADMIN</h1>
           </div>
 
-          {/* UPDATED NAVIGATION BAR WITH HOVER DROPDOWN */}
           <nav className="mt-6 px-4 space-y-2">
 
             {/* Overview */}
@@ -344,13 +246,10 @@ const AdminDashboard = ({ onLogout }) => {
 
             {/* Reports Dropdown */}
             <div className="relative group">
-              <button
-                onClick={() => setActiveTab('reports')}
-                className={`w-full flex justify-between items-center px-4 py-3 rounded-xl transition ${activeTab === 'reports' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
-              >
+              <div className="w-full flex justify-between items-center px-4 py-3 rounded-xl transition hover:bg-gray-800 cursor-default text-gray-300 group-hover:text-white">
                 <span>📈 Reports</span>
                 <span className="text-xs opacity-50 group-hover:rotate-180 transition-transform duration-200">▼</span>
-              </button>
+              </div>
 
               {/* Flyout Sub-menu (Appears on Hover) */}
               <div className="absolute left-0 top-full mt-1 w-[105%] bg-gray-800 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden border border-gray-700">
@@ -363,11 +262,8 @@ const AdminDashboard = ({ onLogout }) => {
                 <a href="/admin/report/users" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
                   User & Demographic
                 </a>
-                <a href="/admin/report/supply-demand" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
+                <a href="/admin/report/supply-demand" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
                   Supply & Demand Dynamics
-                </a>
-                <a href="/admin/report/hospital-performance" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
-                  Hospital & Event Performance
                 </a>
               </div>
             </div>
@@ -403,7 +299,6 @@ const AdminDashboard = ({ onLogout }) => {
 
       <main className="flex-1 p-8 ml-64">
         {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'reports' && renderReports()}
         {activeTab === 'users' && renderUsers()}
         {activeTab === 'events' && renderEvents()}
       </main>
