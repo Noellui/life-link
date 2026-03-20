@@ -78,6 +78,7 @@ class BloodRequestTbl(models.Model):
     units = models.IntegerField()
     urgency = models.CharField(max_length=20) 
     doctor_name = models.CharField(max_length=50, blank=True, null=True)
+    city = models.CharField(max_length=50, blank=True, null=True)
     status = models.CharField(max_length=20, default='Pending')
     request_date = models.DateTimeField()
 

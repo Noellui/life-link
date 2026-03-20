@@ -104,6 +104,38 @@ const PatientRequests = () => {
     }
   };
 
+  // --- ALLOCATE STOCK (FLOW 2) ---
+  const handleAllocateStock = async (id, bloodGroup, units) => {
+    if (!window.confirm(`Allocate ${units} units of ${bloodGroup} from your inventory for Request #${String(id).slice(-4)}?`)) return;
+
+    const user = getUser();
+    const reqItem = requests.find(r => r.id === id);
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/hospital/allocate-stock/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: id, email: user?.email }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to allocate stock');
+      }
+
+      alert('✅ ' + data.message);
+      
+      setRequests(prev => prev.map(req => (req.id === id ? { ...req, status: 'Awaiting Payment' } : req)));
+      
+      if (reqItem) {
+        logStockMovement({ ...reqItem, source: `Allocated to Req #${String(reqItem.id).slice(-4)}`});
+      }
+    } catch (err) {
+      alert(`⚠️ Allocation Failed: ${err.message}\n\nPlease try using the 'Approve' (Broadcast) option instead if you don't have enough matched stock.`);
+    }
+  };
+
   // --- FILTER ---
   const filteredRequests = requests.filter(req => {
     if (filterStatus === 'All') return true;
@@ -114,8 +146,8 @@ const PatientRequests = () => {
   const getUrgencyColor = (level) => {
     switch (level) {
       case 'Critical': return 'bg-red-100 text-red-700 border-red-200';
-      case 'High':     return 'bg-orange-100 text-orange-700 border-orange-200';
-      default:         return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'High': return 'bg-orange-100 text-orange-700 border-orange-200';
+      default: return 'bg-blue-50 text-blue-700 border-blue-200';
     }
   };
 
@@ -172,11 +204,10 @@ const PatientRequests = () => {
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
-                filterStatus === status
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${filterStatus === status
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+                }`}
             >
               {status}
               {status !== 'All' && (
@@ -265,19 +296,29 @@ const PatientRequests = () => {
 
                         <td className="px-6 py-4 text-right">
                           {req.status === 'Pending' ? (
-                            <div className="flex justify-end gap-2">
+                            <div className="flex flex-col items-end gap-2">
                               <button
-                                onClick={() => handleAction(req.id, 'Approved')}
-                                className="bg-green-600 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-green-700 shadow-sm transition"
+                                onClick={() => handleAllocateStock(req.id, req.bloodGroup, req.units)}
+                                className="w-full max-w-[140px] bg-indigo-600 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-indigo-700 shadow-sm transition"
+                                title="Fulfill from your hospital's internal blood storage"
                               >
-                                Approve
+                                Allocate Stock
                               </button>
-                              <button
-                                onClick={() => handleAction(req.id, 'Rejected')}
-                                className="bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded-md text-xs font-bold hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition"
-                              >
-                                Reject
-                              </button>
+                              <div className="flex justify-end gap-2 w-full max-w-[140px]">
+                                <button
+                                  onClick={() => handleAction(req.id, 'Approved')}
+                                  className="flex-1 bg-green-600 text-white px-2 py-1.5 rounded-md text-xs font-bold hover:bg-green-700 shadow-sm transition"
+                                  title="Broadcast to active donors"
+                                >
+                                  Broadcast
+                                </button>
+                                <button
+                                  onClick={() => handleAction(req.id, 'Rejected')}
+                                  className="flex-1 bg-white border border-gray-300 text-gray-700 px-2 py-1.5 rounded-md text-xs font-bold hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition"
+                                >
+                                  Reject
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <button

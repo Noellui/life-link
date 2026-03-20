@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
 const BASE_URL = 'http://127.0.0.1:8000';
@@ -23,42 +23,213 @@ const STATUS_NOTES = {
   'Rejected'         : 'This request was not fulfilled. Please contact the hospital.',
 };
 
+// ---------------------------------------------------------------------------
+// Nearby Stock Alert Banner
+// ---------------------------------------------------------------------------
+const NearbyStockBanner = ({ requestId, bloodGroup, donorInterestCount, requestDate }) => {
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    // Only bother calling if there's no donor interest at all
+    if (donorInterestCount > 0) return;
+
+    fetch(`${BASE_URL}/api/recipient/nearby-stock/?requestId=${requestId}`)
+      .then(r => r.json())
+      .then(data => setResult(data))
+      .catch(() => {});
+  }, [requestId, donorInterestCount]);
+
+  if (!result?.eligible) return null;
+
+  return (
+    <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 animate-pulse-slow">
+      <div className="flex items-start gap-3">
+        <span className="text-amber-500 text-xl mt-0.5">⚠️</span>
+        <div className="flex-1">
+          <p className="font-bold text-amber-800 text-sm">
+            No donors have responded to your {result.bloodGroup} request yet.
+          </p>
+          <p className="text-xs text-amber-700 mt-1 mb-3">
+            Units of <strong>{result.bloodGroup}</strong> are currently available at the following hospitals —
+            consider creating a new request directly targeting one of them:
+          </p>
+          <div className="space-y-2">
+            {result.hospitals.length > 0 ? result.hospitals.map(h => (
+              <div
+                key={h.hospitalId}
+                className="flex items-center justify-between bg-white border border-amber-200 rounded-lg px-3 py-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🏥</span>
+                  <div>
+                    <p className="font-bold text-gray-800 text-sm">{h.hospitalName}</p>
+                    <p className="text-xs text-gray-500">{h.city}</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                  {h.unitsAvailable} unit{h.unitsAvailable !== 1 ? 's' : ''} available
+                </span>
+              </div>
+            )) : (
+              <p className="text-xs text-amber-700 italic">
+                No other hospital currently has {result.bloodGroup} units in stock.
+              </p>
+            )}
+          </div>
+          <Link
+            to="/request-blood"
+            className="inline-block mt-3 text-xs font-bold text-amber-700 underline hover:text-amber-900"
+          >
+            + Create a new targeted request →
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Exhausted Options Banner — shown after 24h with zero interest & zero stock
+// ---------------------------------------------------------------------------
+const ExhaustedBanner = ({ requestId, bloodGroup }) => {
+  const [exhausted, setExhausted] = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE_URL}/api/recipient/check-exhausted/?requestId=${requestId}`)
+      .then(r => r.json())
+      .then(data => setExhausted(data.exhausted === true))
+      .catch(() => {});
+  }, [requestId]);
+
+  if (!exhausted) return null;
+
+  return (
+    <div className="mt-4 rounded-xl border border-gray-300 bg-gray-50 p-4">
+      <div className="flex items-start gap-3">
+        <span className="text-gray-400 text-xl mt-0.5">💙</span>
+        <div>
+          <p className="font-bold text-gray-700 text-sm">We sincerely apologize</p>
+          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+            We currently have no matching donors or available stock for{' '}
+            <strong>{bloodGroup}</strong> blood. Your request remains{' '}
+            <strong>active</strong> — we will notify you immediately the moment
+            a match is found. Please consult your doctor for alternative sources
+            in the meantime.
+          </p>
+          <p className="text-xs text-gray-400 mt-2 italic">
+            🔔 You will receive an alert as soon as a donor or stock becomes available.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Escalation Banner — prompts recipient to broadcast a stalled hospital-targeted request
+// ---------------------------------------------------------------------------
+const EscalationBanner = ({ requestId, hospitalName, onEscalated }) => {
+  const [result,       setResult]       = useState(null);
+  const [escalating,   setEscalating]   = useState(false);
+
+  useEffect(() => {
+    fetch(`${BASE_URL}/api/recipient/check-escalation/?requestId=${requestId}`)
+      .then(r => r.json())
+      .then(data => setResult(data))
+      .catch(() => {});
+  }, [requestId]);
+
+  if (!result?.eligible) return null;
+
+  const handleEscalate = async () => {
+    if (!window.confirm(
+      `Broadcast this request to ALL eligible donors in ${result.city || 'your city'}?\n\nThis will remove the hospital-specific target and notify every matching donor in the area.`
+    )) return;
+
+    const stored = JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
+    setEscalating(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/recipient/escalate-broadcast/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId, email: stored?.email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Escalation failed');
+      alert('📢 ' + data.message);
+      onEscalated();   // reload parent list
+    } catch (err) {
+      alert(`Failed: ${err.message}`);
+    } finally {
+      setEscalating(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-xl border border-orange-300 bg-orange-50 p-4">
+      <div className="flex items-start gap-3">
+        <span className="text-orange-500 text-xl mt-0.5">📢</span>
+        <div className="flex-1">
+          <p className="font-bold text-orange-800 text-sm">
+            {result.hospitalName || hospitalName} has not responded to your request.
+          </p>
+          <p className="text-xs text-orange-700 mt-1 mb-3">
+            No donors have been matched yet. Would you like to broadcast this request to{' '}
+            <strong>all eligible donors in {result.city || 'your city'}</strong>?
+          </p>
+          <button
+            onClick={handleEscalate}
+            disabled={escalating}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition ${
+              escalating
+                ? 'bg-orange-200 text-orange-500 cursor-not-allowed'
+                : 'bg-orange-600 text-white hover:bg-orange-700'
+            }`}
+          >
+            {escalating ? 'Broadcasting…' : '📡 Broadcast to All Donors'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
 const MyRequests = () => {
   const [requests, setRequests] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
 
-  useEffect(() => {
-    const fetchRequests = async () => {
-      const stored = JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
-      const email  = stored?.email;
+  const fetchRequests = useCallback(async () => {
+    const stored = JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
+    const email  = stored?.email;
 
-      if (!email) {
-        setError('Not logged in.');
-        setLoading(false);
-        return;
+    if (!email) {
+      setError('Not logged in.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res  = await fetch(`${BASE_URL}/api/recipient/requests/?email=${encodeURIComponent(email)}`);
+      const data = await res.json();
+
+      if (Array.isArray(data) && data.length > 0) {
+        const DONE = new Set(['Fulfilled', 'Transfusion Done', 'Awaiting Payment', 'Rejected']);
+        setRequests(data.sort((a, b) => (DONE.has(a.status) ? 1 : 0) - (DONE.has(b.status) ? 1 : 0)));
+      } else {
+        setRequests([]);
       }
-
-      try {
-        const res  = await fetch(`${BASE_URL}/api/recipient/requests/?email=${encodeURIComponent(email)}`);
-        const data = await res.json();
-
-        if (Array.isArray(data) && data.length > 0) {
-          // Sort: active first, completed last
-          const DONE = new Set(['Fulfilled', 'Transfusion Done', 'Awaiting Payment', 'Rejected']);
-          setRequests(data.sort((a, b) => (DONE.has(a.status) ? 1 : 0) - (DONE.has(b.status) ? 1 : 0)));
-        } else {
-          setRequests([]);
-        }
-      } catch (err) {
-        setError('Failed to load requests. Please try again.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRequests();
+    } catch (err) {
+      setError('Failed to load requests. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
@@ -89,9 +260,13 @@ const MyRequests = () => {
         {!loading && !error && requests.length > 0 && (
           <div className="space-y-4">
             {requests.map((req) => {
-              const statusStyle = STATUS_STYLES[req.status] || 'bg-gray-100 text-gray-600 border-gray-200';
-              const note        = STATUS_NOTES[req.status]  || 'Status updated.';
-              const displayStatus = req.status === 'Transfusion Done' ? 'Fulfilled' : req.status;
+              const statusStyle     = STATUS_STYLES[req.status] || 'bg-gray-100 text-gray-600 border-gray-200';
+              const note            = STATUS_NOTES[req.status]  || 'Status updated.';
+              const displayStatus   = req.status === 'Transfusion Done' ? 'Fulfilled' : req.status;
+              const isActive        = req.status === 'Pending' || req.status === 'Approved';
+              const noInterest      = req.donorInterestCount === 0;
+              const showFallback    = req.status === 'Approved' && noInterest;
+              const showEscalation  = isActive && !req.isGlobal && noInterest;
 
               return (
                 <div key={req.requestId} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition">
@@ -148,6 +323,33 @@ const MyRequests = () => {
                       <span className="text-gray-400 mt-0.5">ℹ️</span>
                       <p className="text-sm text-gray-600 italic">{note}</p>
                     </div>
+
+                    {/* Close-by Banks Fallback Banner (Flow 4) */}
+                    {showFallback && (
+                      <NearbyStockBanner
+                        requestId={req.requestId}
+                        bloodGroup={req.bloodGroup}
+                        donorInterestCount={req.donorInterestCount}
+                        requestDate={req.requestDate}
+                      />
+                    )}
+
+                    {/* Global Broadcast Escalation Banner (Flow 5) */}
+                    {showEscalation && (
+                      <EscalationBanner
+                        requestId={req.requestId}
+                        hospitalName={req.hospitalName}
+                        onEscalated={fetchRequests}
+                      />
+                    )}
+
+                    {/* Exhausted Options Apology (Flow 6) */}
+                    {req.isGlobal && req.donorInterestCount === 0 && (
+                      <ExhaustedBanner
+                        requestId={req.requestId}
+                        bloodGroup={req.bloodGroup}
+                      />
+                    )}
                   </div>
                 </div>
               );

@@ -38,7 +38,7 @@ export default function MyBills() {
       navigate('/login');
       return;
     }
-    
+
     setUser({
       name: stored.name || 'Guest',
       email: stored.email || '',
@@ -69,7 +69,7 @@ export default function MyBills() {
   // ── Payment Handlers ───────────────────────────────────────────────────────
   const handlePayment = async (bill) => {
     const isLoaded = await loadRazorpayScript();
-    
+
     if (!isLoaded) {
       alert('Razorpay SDK failed to load. Please check your connection.');
       return;
@@ -135,7 +135,7 @@ export default function MyBills() {
       fetch(API.bills(user.email))
         .then(r => r.json())
         .then(data => setBills(Array.isArray(data) ? data : []))
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => setBillsLoading(false));
     }
   };
@@ -150,7 +150,7 @@ export default function MyBills() {
   // ───────────────────────────────────────────────────────────────────────────
   return (
     <div style={styles.page}>
-      
+
       {/* ── HEADER ── */}
       <header style={styles.header}>
         <div style={styles.headerInner}>
@@ -265,7 +265,7 @@ function StatCard({ icon, label, value, color }) {
 }
 
 function BillCard({ bill, onPay }) {
-  const paid  = bill.paymentStatus === 'Paid';
+  const paid = bill.paymentStatus === 'Paid';
   const total = (bill.amount * 1.18).toFixed(0);
   return (
     <div style={{ ...styles.billCard, borderColor: paid ? '#D1FAE5' : '#FEE2E2' }}>
@@ -279,7 +279,7 @@ function BillCard({ bill, onPay }) {
         <span style={{
           padding: '4px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700,
           background: paid ? '#ECFDF5' : '#FEF2F2',
-          color:      paid ? '#059669' : '#DC2626',
+          color: paid ? '#059669' : '#DC2626',
         }}>
           {paid ? '✓ Paid' : 'Unpaid'}
         </span>

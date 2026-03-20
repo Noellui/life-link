@@ -303,10 +303,12 @@ const DonorHistory = () => {
 
   const getStatusColor = (status) => {
     const s = status?.toLowerCase().trim();
-    if (s === 'fulfilled')  return 'bg-green-100 text-green-800';
-    if (s === 'pending')    return 'bg-yellow-100 text-yellow-800';
-    if (s === 'confirmed')  return 'bg-blue-100 text-blue-800';
-    if (s === 'canceled')   return 'bg-gray-100 text-gray-800';
+    if (s === 'fulfilled')        return 'bg-green-100 text-green-800';
+    if (s === 'pending')          return 'bg-yellow-100 text-yellow-800';
+    if (s === 'confirmed')        return 'bg-blue-100 text-blue-800';
+    if (s === 'canceled')         return 'bg-gray-100 text-gray-800';
+    if (s === 'screening failed') return 'bg-orange-100 text-orange-800';
+    if (s === 'screening passed') return 'bg-teal-100 text-teal-800';
     return 'bg-red-100 text-red-800';
   };
 
@@ -369,31 +371,48 @@ const DonorHistory = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {history.length > 0 ? history.map((record) => (
-                  <tr key={record.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{record.date}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{record.location}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{record.type} ({record.units} Unit)</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
-                        {record.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {record.status?.toLowerCase().trim() === 'fulfilled' ? (
-                        <button
-                          onClick={() => {
-                            const storedUser = JSON.parse(localStorage.getItem('user_data') || '{}');
-                            printCertificate(record, storedUser.name);
-                          }}
-                          className="flex items-center gap-1 text-sm font-bold text-red-600 hover:bg-red-50 hover:text-red-800 transition px-3 py-1 rounded-lg"
-                        >
-                          🖨️ Print
-                        </button>
-                      ) : (
-                        <span className="text-gray-400 text-sm italic">Not Available</span>
-                      )}
-                    </td>
-                  </tr>
+                  <React.Fragment key={record.id}>
+                    <tr className="hover:bg-gray-50">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{record.date}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{record.location}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{record.type} ({record.units} Unit)</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(record.status)}`}>
+                          {record.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {record.status?.toLowerCase().trim() === 'fulfilled' ? (
+                          <button
+                            onClick={() => {
+                              const storedUser = JSON.parse(localStorage.getItem('user_data') || '{}');
+                              printCertificate(record, storedUser.name);
+                            }}
+                            className="flex items-center gap-1 text-sm font-bold text-red-600 hover:bg-red-50 hover:text-red-800 transition px-3 py-1 rounded-lg"
+                          >
+                            🖨️ Print
+                          </button>
+                        ) : (
+                          <span className="text-gray-400 text-sm italic">Not Available</span>
+                        )}
+                      </td>
+                    </tr>
+                    {record.status?.toLowerCase().trim() === 'screening failed' && (
+                      <tr>
+                        <td colSpan="5" className="px-6 pb-4 pt-0">
+                          <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-lg px-4 py-3">
+                            <span className="text-orange-500 mt-0.5">⏳</span>
+                            <div>
+                              <p className="text-sm font-bold text-orange-800">Donation Deferred — 14 Day Wait</p>
+                              <p className="text-xs text-orange-700 mt-0.5">
+                                You did not meet the screening criteria at this visit. Please wait 14 days before attempting to donate again. Thank you for your willingness to help — your effort matters!
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 )) : (
                   <tr>
                     <td colSpan="5" className="px-6 py-10 text-center text-gray-500">
