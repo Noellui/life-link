@@ -136,7 +136,8 @@ function App() {
 
           <Route path="/admin/report/finance" element={<FinanceReport />} />
           <Route path="/admin/report/inventory" element={<InventoryReport />} />
-          <Route path="/admin/report/users" element={<UserDemographicsReport />} />
+          <Route path="/admin/demographics-report" element={user?.role === 'Admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />} />
+          <Route path="/admin/report/users" element={<Navigate to="/admin/demographics-report" />} />
           <Route path="/admin/report/supply-demand" element={<SupplyDemandReport />} />
 
           {/* --- FALLBACK --- */}

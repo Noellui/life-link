@@ -1,11 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import UserDemographicsReport from './UserDemographicsReport';
 
 const AdminDashboard = ({ onLogout }) => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // --- 1. STATE MANAGEMENT ---
   const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    if (location.pathname === '/admin/demographics-report' || location.pathname === '/admin/report/users') {
+      setActiveTab('demographics');
+    } else {
+      setActiveTab('overview');
+    }
+  }, [location.pathname]);
+
+  const handleTabClick = (tab) => {
+    setActiveTab(tab);
+    if (location.pathname !== '/dashboard/admin') {
+      navigate('/dashboard/admin');
+    }
+  };
   const [loading, setLoading] = useState(false);
 
   // Data States
@@ -238,7 +255,7 @@ const AdminDashboard = ({ onLogout }) => {
 
             {/* Overview */}
             <button
-              onClick={() => setActiveTab('overview')}
+              onClick={() => handleTabClick('overview')}
               className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === 'overview' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
             >
               📊 Overview
@@ -259,18 +276,23 @@ const AdminDashboard = ({ onLogout }) => {
                 <a href="/admin/report/inventory" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
                   Global Blood Inventory
                 </a>
-                <a href="/admin/report/users" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white border-b border-gray-700 transition">
-                  User & Demographic
-                </a>
                 <a href="/admin/report/supply-demand" target="_blank" rel="noopener noreferrer" className="block px-4 py-3 text-xs font-medium text-gray-300 hover:bg-gray-700 hover:text-white transition">
                   Supply & Demand Dynamics
                 </a>
               </div>
             </div>
 
+            {/* Demographics */}
+            <Link
+              to="/admin/demographics-report"
+              className={`w-full block text-left px-4 py-3 rounded-xl transition hover:bg-gray-800 text-gray-300 hover:text-white ${activeTab === 'demographics' ? 'bg-red-600 !text-white hover:bg-red-700' : ''}`}
+            >
+              📊 Demographics
+            </Link>
+
             {/* Users */}
             <button
-              onClick={() => setActiveTab('users')}
+              onClick={() => handleTabClick('users')}
               className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === 'users' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
             >
               👥 Users
@@ -278,7 +300,7 @@ const AdminDashboard = ({ onLogout }) => {
 
             {/* Events */}
             <button
-              onClick={() => setActiveTab('events')}
+              onClick={() => handleTabClick('events')}
               className={`w-full text-left px-4 py-3 rounded-xl transition ${activeTab === 'events' ? 'bg-red-600' : 'hover:bg-gray-800'}`}
             >
               📅 Events
@@ -301,6 +323,7 @@ const AdminDashboard = ({ onLogout }) => {
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'users' && renderUsers()}
         {activeTab === 'events' && renderEvents()}
+        {activeTab === 'demographics' && <UserDemographicsReport />}
       </main>
     </div>
   );

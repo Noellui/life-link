@@ -1411,6 +1411,32 @@ def hospital_appointment_update(request, appointment_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@csrf_exempt
+def hospital_cancel_appointment(request, appointment_id):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    try:
+        appointment = AppointmentTbl.objects.filter(appointment_id=appointment_id).first()
+        if not appointment:
+            return JsonResponse({'error': 'Appointment not found'}, status=404)
+        
+        if appointment.status in ['Fulfilled', 'Transfusion Done']:
+            return JsonResponse({'error': 'Cannot cancel a fulfilled or transfusion done appointment'}, status=400)
+            
+        appointment.status = 'Canceled'
+        appointment.save()
+        
+        if appointment.event_id:
+            event = EventTbl.objects.filter(event_id=appointment.event_id).first()
+            if event and event.seats_available is not None:
+                event.seats_available += 1
+                event.save()
+                
+        return JsonResponse({'message': 'Appointment canceled successfully.'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 # =============================================================================
 # HOSPITAL EVENTS — LIST, CREATE, AND DONOR ROSTER (NEW)
 # =============================================================================
@@ -1475,11 +1501,41 @@ def hospital_events_create(request):
         start_time  = body.get('startTime')
         end_time    = body.get('endTime')
         location    = body.get('location')
-        seats       = int(body.get('seats') or 100)
         description = body.get('description', '')
 
         if not all([email, title, date, start_time, end_time, location]):
             return JsonResponse({'error': 'Missing required fields'}, status=400)
+
+        title = title.strip()
+        location = location.strip()
+        if not title or not location:
+            return JsonResponse({'error': 'Title and location cannot be empty string.'}, status=400)
+
+        try:
+            seats = int(body.get('seats') or 100)
+            if seats <= 0:
+                return JsonResponse({'error': 'Seats must be strictly greater than 0.'}, status=400)
+        except ValueError:
+            return JsonResponse({'error': 'Seats must be a valid integer.'}, status=400)
+
+        try:
+            event_date = datetime.datetime.strptime(date, '%Y-%m-%d').date()
+            if event_date < datetime.date.today():
+                return JsonResponse({'error': 'Event date cannot be in the past.'}, status=400)
+        except ValueError:
+            return JsonResponse({'error': 'Invalid date format.'}, status=400)
+
+        try:
+            def parse_time(t_str):
+                try:
+                    return datetime.datetime.strptime(t_str, '%H:%M:%S').time()
+                except ValueError:
+                    return datetime.datetime.strptime(t_str, '%H:%M').time()
+                    
+            if parse_time(start_time) >= parse_time(end_time):
+                return JsonResponse({'error': 'Start time must be strictly before end time.'}, status=400)
+        except ValueError:
+            return JsonResponse({'error': 'Invalid time format.'}, status=400)
 
         with connection.cursor() as cursor:
             cursor.execute("""
@@ -2323,6 +2379,18 @@ def admin_inventory_report(request):
 @csrf_exempt
 def admin_demographics_report(request):
     try:
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        date_filter_donor = ""
+        date_filter_donor_and = ""
+        date_params = []
+
+        if start_date and end_date:
+            date_filter_donor = "WHERE registration_date >= %s AND registration_date <= %s"
+            date_filter_donor_and = "AND d.registration_date >= %s AND d.registration_date <= %s"
+            date_params = [start_date, end_date]
+
         with connection.cursor() as cursor:
             # 1. Total Users by Role
             cursor.execute("""
@@ -2340,26 +2408,29 @@ def admin_demographics_report(request):
             total_hospitals = sum(r["count"] for r in roles_distribution if r["role"] == "Hospital")
 
             # 2. Donor Gender Distribution
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(gender, 'Not Specified'), COUNT(*)
                 FROM donor_tbl
+                {date_filter_donor}
                 GROUP BY gender
-            """)
+            """, date_params)
             gender_rows = cursor.fetchall()
             gender_distribution = [{"gender": row[0], "count": row[1]} for row in gender_rows]
 
             # 3. Donor City Distribution
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT COALESCE(city, 'Unknown'), COUNT(*) as city_count
                 FROM donor_tbl
+                {date_filter_donor}
                 GROUP BY city
                 ORDER BY city_count DESC
-            """)
+            """, date_params)
             city_rows = cursor.fetchall()
             city_distribution = [{"city": row[0], "count": row[1]} for row in city_rows]
 
             # 4. Age Distribution (Calculate from DOB)
-            cursor.execute("SELECT date_of_birth FROM donor_tbl WHERE date_of_birth IS NOT NULL")
+            age_query = f"SELECT date_of_birth FROM donor_tbl {date_filter_donor + ' AND' if date_filter_donor else 'WHERE'} date_of_birth IS NOT NULL"
+            cursor.execute(age_query, date_params)
             dob_rows = cursor.fetchall()
 
             age_buckets = {"18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55+": 0}
@@ -2378,13 +2449,13 @@ def admin_demographics_report(request):
             age_distribution = [{"ageGroup": k, "count": v} for k, v in age_buckets.items() if v > 0]
 
             # 5. Donor Blood Type Distribution
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT bt.blood_type, COUNT(d.donor_id)
                 FROM blood_type_tbl bt
-                LEFT JOIN donor_tbl d ON bt.blood_id = d.blood_id
+                LEFT JOIN donor_tbl d ON bt.blood_id = d.blood_id {date_filter_donor_and}
                 GROUP BY bt.blood_id, bt.blood_type
                 ORDER BY bt.blood_id
-            """)
+            """, date_params)
             blood_rows = cursor.fetchall()
             blood_distribution = [{"bloodGroup": row[0], "count": row[1]} for row in blood_rows]
 

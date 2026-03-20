@@ -128,6 +128,29 @@ const HospitalAppointments = () => {
     }
   };
 
+  const handleCancelAppointment = async (appointmentId) => {
+    if (!window.confirm("Are you sure you want to cancel this appointment?")) return;
+    try {
+      const res = await fetch(`${BASE_URL}/api/hospital/appointments/${appointmentId}/cancel/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Cancellation failed');
+      }
+
+      setAppointments(prev =>
+        prev.map(app => app.id === appointmentId ? { ...app, status: 'Canceled' } : app)
+      );
+      alert('✅ Appointment Canceled successfully.');
+    } catch (err) {
+      console.error('Cancellation error:', err);
+      alert(`Failed to cancel appointment: ${err.message}`);
+    }
+  };
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'Transfusion Done':  return 'bg-purple-100 text-purple-800 border-purple-200';
@@ -252,6 +275,12 @@ const HospitalAppointments = () => {
                         >
                           Reject
                         </button>
+                        <button
+                          onClick={() => handleCancelAppointment(app.id)}
+                          className="border border-red-600 text-red-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-50 transition"
+                        >
+                          Cancel
+                        </button>
                       </div>
                     )}
 
@@ -273,6 +302,12 @@ const HospitalAppointments = () => {
                           className="bg-orange-50 border border-orange-200 text-orange-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-orange-100 transition"
                         >
                           Fail Screening
+                        </button>
+                        <button
+                          onClick={() => handleCancelAppointment(app.id)}
+                          className="border border-red-600 text-red-600 px-3 py-1.5 rounded text-xs font-bold hover:bg-red-50 transition"
+                        >
+                          Cancel
                         </button>
                       </div>
                     )}

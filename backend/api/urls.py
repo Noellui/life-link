@@ -44,6 +44,7 @@ urlpatterns = [
     # --- HOSPITAL APPOINTMENTS ---
     path('hospital/appointments/', views.hospital_appointments_list, name='hospital_appointments_list'),
     path('hospital/appointments/<int:appointment_id>/update/', views.hospital_appointment_update, name='hospital_appointment_update'),
+    path('hospital/appointments/<int:appointment_id>/cancel/', views.hospital_cancel_appointment, name='hospital_cancel_appointment'),
     path('hospital/appointments/<int:appointment_id>/fulfill/', views.fulfill_appointment_view, name='hospital_fulfill_appointment'),
 
     # --- HOSPITAL EVENTS ---

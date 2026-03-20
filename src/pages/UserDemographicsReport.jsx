@@ -5,6 +5,8 @@ import autoTable from 'jspdf-autotable';
 const UserDemographicsReport = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [demoData, setDemoData] = useState({
     summary: { totalDonors: 0, totalRecipients: 0, totalHospitals: 0 },
     roles: [],
@@ -14,10 +16,15 @@ const UserDemographicsReport = () => {
     blood: []
   });
 
-  const fetchDemographics = async () => {
+  const fetchDemographics = async (start = '', end = '') => {
     setLoading(true);
+    setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/admin/demographics-report/');
+      let url = 'http://127.0.0.1:8000/api/admin/demographics-report/';
+      if (start && end) {
+        url += `?start_date=${start}&end_date=${end}`;
+      }
+      const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch demographics");
       const data = await response.json();
       setDemoData(data);
@@ -26,6 +33,20 @@ const UserDemographicsReport = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApplyFilters = () => {
+    if (startDate && endDate && endDate < startDate) {
+      setError("Validation Error: End Date cannot be earlier than Start Date.");
+      return;
+    }
+    fetchDemographics(startDate, endDate);
+  };
+
+  const handleClearFilters = () => {
+    setStartDate('');
+    setEndDate('');
+    fetchDemographics('', '');
   };
 
   useEffect(() => {
@@ -104,6 +125,40 @@ const UserDemographicsReport = () => {
             className="bg-gray-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-gray-700 transition flex items-center gap-2 shadow-md"
           >
             <span>📄</span> Export Demographics
+          </button>
+        </div>
+
+        {/* Filters Section */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Start Date</label>
+            <input 
+              type="date" 
+              value={startDate} 
+              onChange={e => setStartDate(e.target.value)} 
+              className="border border-gray-300 rounded px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">End Date</label>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={e => setEndDate(e.target.value)} 
+              className="border border-gray-300 rounded px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <button 
+            onClick={handleApplyFilters} 
+            className="bg-red-600 text-white px-6 py-2 rounded font-bold hover:bg-red-700 transition"
+          >
+            Apply
+          </button>
+          <button 
+            onClick={handleClearFilters} 
+            className="text-gray-600 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded font-bold transition"
+          >
+            Clear Filters
           </button>
         </div>
 

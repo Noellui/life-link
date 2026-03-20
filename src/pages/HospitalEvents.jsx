@@ -12,6 +12,7 @@ const HospitalEvents = () => {
   const [donorsLoading, setDonorsLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [modalError, setModalError] = useState('');
 
   // --- RESOLVE LOGGED-IN USER ---
   const getHospitalEmail = () => {
@@ -75,23 +76,33 @@ const HospitalEvents = () => {
   // --- CREATE NEW EVENT ---
   const handleCreateEvent = async (e) => {
     e.preventDefault();
+    setModalError('');
     const email = getHospitalEmail();
     if (!email) {
-      alert('Not logged in.');
+      setModalError('Not logged in.');
       return;
     }
-    setCreating(true);
 
     const formData = new FormData(e.target);
+    const startTime = formData.get('startTime');
+    const endTime = formData.get('endTime');
+
+    if (startTime >= endTime) {
+      setModalError('Start time must be before End time.');
+      return;
+    }
+
+    setCreating(true);
+
     const payload = {
       email,
-      title: formData.get('title'),
+      title: (formData.get('title') || '').trim(),
       date: formData.get('date'),
-      startTime: formData.get('startTime'),
-      endTime: formData.get('endTime'),
-      location: formData.get('location'),
+      startTime,
+      endTime,
+      location: (formData.get('location') || '').trim(),
       seats: parseInt(formData.get('seats')) || 100,
-      description: formData.get('description') || '',
+      description: (formData.get('description') || '').trim(),
     };
 
     try {
@@ -101,7 +112,7 @@ const HospitalEvents = () => {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Create failed');
       }
       setShowCreateModal(false);
@@ -109,7 +120,7 @@ const HospitalEvents = () => {
       await fetchEvents();
       alert('Event Created Successfully! 📅');
     } catch (err) {
-      alert(`Failed to create event: ${err.message}`);
+      setModalError(err.message);
     } finally {
       setCreating(false);
     }
@@ -155,7 +166,7 @@ const HospitalEvents = () => {
         </div>
         {!activeEvent && (
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => { setModalError(''); setShowCreateModal(true); }}
             className="bg-red-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-red-700 shadow-md transition flex items-center gap-2"
           >
             <span>+</span> Create New Event
@@ -176,7 +187,7 @@ const HospitalEvents = () => {
             <div className="col-span-full text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
               <p className="text-gray-500 mb-2">No active events found.</p>
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => { setModalError(''); setShowCreateModal(true); }}
                 className="text-red-600 font-bold hover:underline"
               >
                 Create your first event
@@ -330,6 +341,12 @@ const HospitalEvents = () => {
             </div>
 
             <form onSubmit={handleCreateEvent} className="space-y-5">
+              {modalError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 text-sm font-bold">
+                  ⚠️ {modalError}
+                </div>
+              )}
+              
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">Event Title</label>
                 <input
@@ -344,7 +361,7 @@ const HospitalEvents = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">Date</label>
-                  <input name="date" type="date" required className="w-full border border-gray-300 rounded-lg p-2.5" />
+                  <input name="date" type="date" min={new Date().toISOString().split('T')[0]} required className="w-full border border-gray-300 rounded-lg p-2.5" />
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">Start Time</label>
@@ -363,7 +380,7 @@ const HospitalEvents = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-1">Seats</label>
-                  <input name="seats" type="number" required className="w-full border border-gray-300 rounded-lg p-2.5" placeholder="100" />
+                  <input name="seats" type="number" min="1" required className="w-full border border-gray-300 rounded-lg p-2.5" placeholder="100" />
                 </div>
               </div>
 
