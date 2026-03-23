@@ -243,21 +243,18 @@ def donor_dashboard_stats(request):
 
 
 def active_requests(request):
-    # 1. Import Q at the top of the function so we can do OR queries
-    from django.db.models import Q 
-    
     email = request.GET.get('email')
     try:
         donor_city = None
         donor_blood_type = None
-        
+
         if email:
-            user  = UserRegistrationTbl.objects.filter(email=email).first()
+            user = UserRegistrationTbl.objects.filter(email=email).first()
             if user:
                 donor = DonorTbl.objects.filter(user=user).first()
                 if donor:
                     if donor.city:
-                        donor_city = donor.city.strip() # Strip spaces just in case
+                        donor_city = donor.city
                     # Fetch donor's blood type
                     if donor.blood_id:
                         b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
@@ -269,16 +266,14 @@ def active_requests(request):
             'recipient', 'hospital'
         ).filter(status='Approved')
 
-        # 2. FIXED CITY FILTER: Check both the request city AND the hospital city
+        # Filter by donor city if it exists
         if donor_city:
-            query = query.filter(
-                Q(city__iexact=donor_city) | Q(hospital__city__iexact=donor_city)
-            )
+            query = query.filter(city__iexact=donor_city)
 
         # UNIVERSAL DONOR LOGIC: Filter by blood compatibility
         if donor_blood_type:
             compatibility = {
-                'O-':  ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'], # Universal Donor!
+                'O-':  ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'],  # Universal Donor!
                 'O+':  ['O+', 'A+', 'B+', 'AB+'],
                 'A-':  ['A-', 'A+', 'AB-', 'AB+'],
                 'A+':  ['A+', 'AB+'],
@@ -287,6 +282,7 @@ def active_requests(request):
                 'AB-': ['AB-', 'AB+'],
                 'AB+': ['AB+']
             }
+            # Get allowed types (fallback to strict match if unknown)
             allowed_types = compatibility.get(donor_blood_type, [donor_blood_type])
             query = query.filter(blood_group__in=allowed_types)
 

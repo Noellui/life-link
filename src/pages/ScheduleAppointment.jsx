@@ -49,8 +49,21 @@ const ScheduleAppointment = () => {
       setCentersLoading(true);
       try {
         // Get donor's city from localStorage (single key)
-        const stored = JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
-        const city = stored?.city || '';
+        const stored = 
+          JSON.parse(localStorage.getItem('user_data') || 'null') || 
+          JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
+        let city = stored?.city || '';
+
+        // If city not in localStorage, fetch it from the profile API
+        if (!city && stored?.email) {
+          const profileRes = await fetch(
+            `${BASE_URL}/api/donor/profile/?email=${encodeURIComponent(stored.email)}`
+          );
+          if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            city = profileData.city || '';
+          }
+        }
 
         if (city) {
           const res = await fetch(`${BASE_URL}/api/hospitals/by-city/?city=${encodeURIComponent(city)}`);
@@ -147,7 +160,9 @@ const ScheduleAppointment = () => {
     setIsSubmitting(true);
 
     // Single localStorage key
-    const currentUser = JSON.parse(localStorage.getItem('lifeLinkUser') || '{}');
+    const currentUser = 
+      JSON.parse(localStorage.getItem('user_data') || 'null') || 
+      JSON.parse(localStorage.getItem('lifeLinkUser') || '{}');
     const questionnaire = { answers, vitals, submittedAt: new Date().toISOString() };
     const selectedCenter = centers.find(c => c.id == formData.center);
 
@@ -198,8 +213,8 @@ const ScheduleAppointment = () => {
           <React.Fragment key={num}>
             <div className="flex flex-col items-center">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${done ? 'bg-green-500 text-white' :
-                  active ? 'bg-red-600 text-white ring-4 ring-red-100' :
-                    'bg-gray-200 text-gray-500'
+                active ? 'bg-red-600 text-white ring-4 ring-red-100' :
+                  'bg-gray-200 text-gray-500'
                 }`}>
                 {done ? '✓' : num}
               </div>
@@ -216,7 +231,9 @@ const ScheduleAppointment = () => {
 
   // ── STEP 1: Location & Time ─────────────────────────────────────────────────
   if (step === 1) {
-    const storedUser = JSON.parse(localStorage.getItem('lifeLinkUser') || '{}');
+    const storedUser = 
+      JSON.parse(localStorage.getItem('user_data') || 'null') || 
+      JSON.parse(localStorage.getItem('lifeLinkUser') || '{}');
     const donorCity = storedUser?.city || '';
 
     return (
@@ -305,8 +322,8 @@ const ScheduleAppointment = () => {
                     <label
                       key={type}
                       className={`cursor-pointer rounded-lg border-2 p-3 text-center text-sm font-medium transition ${formData.donationType === type
-                          ? 'border-red-500 bg-red-50 text-red-700'
-                          : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                        ? 'border-red-500 bg-red-50 text-red-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
                         }`}
                     >
                       <input
@@ -390,8 +407,8 @@ const ScheduleAppointment = () => {
                             type="button"
                             onClick={() => handleAnswer(q.id, opt === 'Yes')}
                             className={`flex-1 py-2 rounded-lg font-bold text-sm transition border-2 ${answers[q.id] === (opt === 'Yes')
-                                ? opt === 'Yes' ? 'bg-green-500 text-white border-green-500' : 'bg-red-500 text-white border-red-500'
-                                : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                              ? opt === 'Yes' ? 'bg-green-500 text-white border-green-500' : 'bg-red-500 text-white border-red-500'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
                               }`}
                           >
                             {opt}
