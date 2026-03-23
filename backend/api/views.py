@@ -3041,3 +3041,72 @@ def admin_supply_demand_report(request):
     except Exception as e:
         print(f"Supply Demand Report Error: {e}")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def admin_dashboard_trends(request):
+    """
+    Returns supply (donations) and demand (requests) formatted for Recharts.
+    Uses YEAR() and MONTH() to prevent Python string formatting crashes.
+    """
+    try:
+        import datetime
+
+        # 1. Pre-generate the last 6 months so the chart always has an X-Axis
+        trend_dict = {}
+        today = datetime.date.today()
+
+        for i in range(6):
+            month = today.month - i
+            year = today.year
+            if month <= 0:
+                month += 12
+                year -= 1
+
+            # Format exactly as "YYYY-MM" (e.g., "2026-03") to use as the dictionary key
+            m_str = f"{year}-{month:02d}"
+            d = datetime.date(year, month, 1)
+            trend_dict[m_str] = {"name": d.strftime('%b'), "donations": 0, "requests": 0}
+
+        with connection.cursor() as cursor:
+            # 2. Fetch ALL-TIME Donations (Safely getting Year and Month)
+            cursor.execute("""
+                SELECT 
+                    YEAR(appointment_date) as yr, 
+                    MONTH(appointment_date) as mnth, 
+                    COUNT(*) as donations
+                FROM appointment_tbl
+                WHERE status IN ('Fulfilled', 'Transfusion Done')
+                GROUP BY yr, mnth
+            """)
+            for row in cursor.fetchall():
+                yr, mnth, count = row
+                m_str = f"{yr}-{mnth:02d}"
+                if m_str in trend_dict:
+                    trend_dict[m_str]["donations"] = int(count)
+
+            # 3. Fetch ALL-TIME Requests (Safely getting Year and Month)
+            cursor.execute("""
+                SELECT 
+                    YEAR(request_date) as yr, 
+                    MONTH(request_date) as mnth, 
+                    COUNT(*) as requests
+                FROM blood_request_tbl
+                GROUP BY yr, mnth
+            """)
+            for row in cursor.fetchall():
+                yr, mnth, count = row
+                m_str = f"{yr}-{mnth:02d}"
+                if m_str in trend_dict:
+                    trend_dict[m_str]["requests"] = int(count)
+
+        # 4. Sort chronologically and return
+        sorted_keys = sorted(trend_dict.keys())
+        result = [trend_dict[k] for k in sorted_keys]
+
+        return JsonResponse(result, safe=False)
+
+    except Exception as e:
+        import traceback
+        print("admin_dashboard_trends ERROR:", traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)

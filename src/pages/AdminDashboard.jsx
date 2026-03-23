@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import UserDemographicsReport from './UserDemographicsReport';
+// 1. Import Recharts components
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const AdminDashboard = ({ onLogout }) => {
   const navigate = useNavigate();
@@ -39,6 +41,27 @@ const AdminDashboard = ({ onLogout }) => {
     hospitals: 0,
     pending_requests: 0
   });
+
+  // 2. Add state for your trend data
+  const [trendData, setTrendData] = useState([]);
+
+  // 3. Fetch the trend data from your Django backend
+  useEffect(() => {
+    const fetchTrendData = async () => {
+      try {
+        // Replace with your actual Django endpoint
+        const response = await fetch('http://127.0.0.1:8000/api/admin/dashboard-trends/');
+        if (response.ok) {
+          const data = await response.json();
+          setTrendData(data);
+        }
+      } catch (error) {
+        console.error('Error fetching trend data:', error);
+      }
+    };
+
+    fetchTrendData();
+  }, []);
 
   // --- 2. API SERVICE ---
   const fetchDashboardData = async () => {
@@ -163,6 +186,50 @@ const AdminDashboard = ({ onLogout }) => {
             )}
           </ul>
         )}
+      </div>
+
+      {/* 4. Add the New Trends Section right below the grid */}
+      <div className="mt-8 bg-white p-6 rounded-lg shadow">
+        <h3 className="text-xl font-bold text-gray-800 mb-6 border-b pb-2">
+          Supply & Demand Trends
+        </h3>
+        
+        {/* ResponsiveContainer ensures the chart fits your screen size */}
+        <div className="h-80 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={trendData}
+              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+              <XAxis dataKey="name" stroke="#6B7280" />
+              <YAxis stroke="#6B7280" />
+              <Tooltip 
+                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
+              />
+              <Legend wrapperStyle={{ paddingTop: '20px' }} />
+              
+              {/* Green line for donations */}
+              <Line 
+                type="monotone" 
+                dataKey="donations" 
+                name="Donations (Units)" 
+                stroke="#10B981" 
+                strokeWidth={3} 
+                activeDot={{ r: 8 }} 
+              />
+              
+              {/* Red line for requests */}
+              <Line 
+                type="monotone" 
+                dataKey="requests" 
+                name="Requests (Units)" 
+                stroke="#EF4444" 
+                strokeWidth={3} 
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );

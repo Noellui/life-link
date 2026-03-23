@@ -9,6 +9,7 @@ urlpatterns = [
 
     # --- ADMIN DASHBOARD ---
     path('admin/stats/', views.admin_dashboard_stats, name='admin_stats'),
+    path('admin/dashboard-trends/', views.admin_dashboard_trends, name='admin_dashboard_trends'),
     path('admin/users/', views.user_list, name='user_list'),
     path('admin/users/<int:user_id>/', views.delete_user, name='delete_user'),
     path('admin/events/<int:event_id>/', views.delete_event_view, name='delete_event'),

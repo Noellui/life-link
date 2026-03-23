@@ -6,6 +6,9 @@ const Login = ({ onLogin }) => {
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // 1. Add state to toggle password visibility
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -69,9 +72,26 @@ const Login = ({ onLogin }) => {
               <label className="block text-sm font-medium text-gray-700">Email address</label>
               <input name="email" type="email" required value={formData.email} onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
             </div>
+            {/* 2 & 3. Updated Password Field with Show/Hide Toggle */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Password</label>
-              <input name="password" type="password" required value={formData.password} onChange={handleChange} className="mt-1 block w-full border rounded-md p-2 focus:ring-red-500" />
+              <div className="relative mt-1">
+                <input 
+                  name="password" 
+                  type={showPassword ? "text" : "password"} 
+                  required 
+                  value={formData.password} 
+                  onChange={handleChange} 
+                  className="block w-full border rounded-md p-2 pr-12 focus:ring-red-500" 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-sm font-medium text-gray-600 hover:text-red-600 focus:outline-none"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
             </div>
             <button type="submit" disabled={isLoading} className="w-full bg-red-600 text-white py-2 rounded-md hover:bg-red-700 transition shadow-sm font-bold">
               {isLoading ? 'Processing...' : 'Sign In'}
