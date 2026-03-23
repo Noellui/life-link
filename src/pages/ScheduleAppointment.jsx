@@ -2,15 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const QUESTIONS = [
-  { id: 'q_feeling_well',     label: 'Are you feeling well today?',                                             yesIsGood: true  },
-  { id: 'q_recent_illness',   label: 'Have you had any illness, cold, or flu in the last 2 weeks?',            yesIsGood: false },
-  { id: 'q_medications',      label: 'Are you currently taking any prescription medications?',                  yesIsGood: false },
-  { id: 'q_antibiotics',      label: 'Have you taken antibiotics in the last 2 weeks?',                        yesIsGood: false },
-  { id: 'q_recent_travel',    label: 'Have you travelled outside India in the last 6 months?',                 yesIsGood: false },
-  { id: 'q_tattoo',           label: 'Have you had a tattoo, piercing, or acupuncture in the last 12 months?', yesIsGood: false },
-  { id: 'q_alcohol',          label: 'Have you consumed alcohol in the last 24 hours?',                        yesIsGood: false },
-  { id: 'q_donated_before',   label: 'Have you donated blood before?',                                         yesIsGood: null  },
-  { id: 'q_eligibility_wait', label: 'Have you donated blood in the last 56 days (8 weeks)?',                  yesIsGood: false },
+  { id: 'q_feeling_well', label: 'Are you feeling well today?', yesIsGood: true },
+  { id: 'q_recent_illness', label: 'Have you had any illness, cold, or flu in the last 2 weeks?', yesIsGood: false },
+  { id: 'q_medications', label: 'Are you currently taking any prescription medications?', yesIsGood: false },
+  { id: 'q_antibiotics', label: 'Have you taken antibiotics in the last 2 weeks?', yesIsGood: false },
+  { id: 'q_recent_travel', label: 'Have you travelled outside India in the last 6 months?', yesIsGood: false },
+  { id: 'q_tattoo', label: 'Have you had a tattoo, piercing, or acupuncture in the last 12 months?', yesIsGood: false },
+  { id: 'q_alcohol', label: 'Have you consumed alcohol in the last 24 hours?', yesIsGood: false },
+  { id: 'q_donated_before', label: 'Have you donated blood before?', yesIsGood: null },
+  { id: 'q_eligibility_wait', label: 'Have you donated blood in the last 56 days (8 weeks)?', yesIsGood: false },
 ];
 
 const BASE_URL = 'http://127.0.0.1:8000';
@@ -119,11 +119,11 @@ const ScheduleAppointment = () => {
       }
     }
     const disqualifiers = [
-      { id: 'q_feeling_well',     bad: false, reason: 'You must be feeling well to donate.' },
-      { id: 'q_recent_illness',   bad: true,  reason: 'You should wait 2 weeks after illness.' },
-      { id: 'q_antibiotics',      bad: true,  reason: 'Please wait 2 weeks after completing antibiotics.' },
-      { id: 'q_alcohol',          bad: true,  reason: 'Please wait 24 hours after alcohol consumption.' },
-      { id: 'q_eligibility_wait', bad: true,  reason: 'You must wait 56 days between whole blood donations.' },
+      { id: 'q_feeling_well', bad: false, reason: 'You must be feeling well to donate.' },
+      { id: 'q_recent_illness', bad: true, reason: 'You should wait 2 weeks after illness.' },
+      { id: 'q_antibiotics', bad: true, reason: 'Please wait 2 weeks after completing antibiotics.' },
+      { id: 'q_alcohol', bad: true, reason: 'Please wait 24 hours after alcohol consumption.' },
+      { id: 'q_eligibility_wait', bad: true, reason: 'You must wait 56 days between whole blood donations.' },
     ];
     for (const rule of disqualifiers) {
       if (answers[rule.id] === rule.bad) {
@@ -197,11 +197,10 @@ const ScheduleAppointment = () => {
         return (
           <React.Fragment key={num}>
             <div className="flex flex-col items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
-                done   ? 'bg-green-500 text-white' :
-                active ? 'bg-red-600 text-white ring-4 ring-red-100' :
-                         'bg-gray-200 text-gray-500'
-              }`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${done ? 'bg-green-500 text-white' :
+                  active ? 'bg-red-600 text-white ring-4 ring-red-100' :
+                    'bg-gray-200 text-gray-500'
+                }`}>
                 {done ? '✓' : num}
               </div>
               <span className={`text-xs mt-1 font-medium ${active ? 'text-red-600' : 'text-gray-400'}`}>{label}</span>
@@ -305,11 +304,10 @@ const ScheduleAppointment = () => {
                   {['Whole Blood', 'Platelets', 'Plasma'].map(type => (
                     <label
                       key={type}
-                      className={`cursor-pointer rounded-lg border-2 p-3 text-center text-sm font-medium transition ${
-                        formData.donationType === type
+                      className={`cursor-pointer rounded-lg border-2 p-3 text-center text-sm font-medium transition ${formData.donationType === type
                           ? 'border-red-500 bg-red-50 text-red-700'
                           : 'border-gray-200 hover:border-gray-300 text-gray-600'
-                      }`}
+                        }`}
                     >
                       <input
                         type="radio"
@@ -379,9 +377,8 @@ const ScheduleAppointment = () => {
                   {QUESTIONS.map((q, i) => (
                     <div
                       key={q.id}
-                      className={`rounded-xl border-2 p-4 transition-all ${
-                        answers[q.id] !== null ? 'border-gray-200 bg-gray-50' : 'border-gray-200'
-                      }`}
+                      className={`rounded-xl border-2 p-4 transition-all ${answers[q.id] !== null ? 'border-gray-200 bg-gray-50' : 'border-gray-200'
+                        }`}
                     >
                       <p className="text-sm font-semibold text-gray-800 mb-3">
                         <span className="text-gray-400 mr-2">{i + 1}.</span>{q.label}
@@ -392,11 +389,10 @@ const ScheduleAppointment = () => {
                             key={opt}
                             type="button"
                             onClick={() => handleAnswer(q.id, opt === 'Yes')}
-                            className={`flex-1 py-2 rounded-lg font-bold text-sm transition border-2 ${
-                              answers[q.id] === (opt === 'Yes')
+                            className={`flex-1 py-2 rounded-lg font-bold text-sm transition border-2 ${answers[q.id] === (opt === 'Yes')
                                 ? opt === 'Yes' ? 'bg-green-500 text-white border-green-500' : 'bg-red-500 text-white border-red-500'
                                 : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
-                            }`}
+                              }`}
                           >
                             {opt}
                           </button>
@@ -439,9 +435,8 @@ const ScheduleAppointment = () => {
                     ← Back
                   </button>
                   <button type="button" onClick={goToConfirm} disabled={!allAnswered}
-                    className={`flex-1 font-bold py-3 rounded-lg transition shadow-md ${
-                      allAnswered ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                    }`}>
+                    className={`flex-1 font-bold py-3 rounded-lg transition shadow-md ${allAnswered ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      }`}>
                     Next: Confirm →
                   </button>
                 </div>
@@ -517,9 +512,8 @@ const ScheduleAppointment = () => {
                   ← Back
                 </button>
                 <button type="submit" disabled={isSubmitting}
-                  className={`flex-1 font-bold py-3 rounded-lg transition shadow-md ${
-                    isSubmitting ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-red-600 text-white hover:bg-red-700'
-                  }`}>
+                  className={`flex-1 font-bold py-3 rounded-lg transition shadow-md ${isSubmitting ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-red-600 text-white hover:bg-red-700'
+                    }`}>
                   {isSubmitting ? 'Submitting...' : '🩸 Submit Appointment Request'}
                 </button>
               </div>

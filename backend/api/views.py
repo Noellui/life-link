@@ -243,23 +243,52 @@ def donor_dashboard_stats(request):
 
 
 def active_requests(request):
+    # 1. Import Q at the top of the function so we can do OR queries
+    from django.db.models import Q 
+    
     email = request.GET.get('email')
     try:
         donor_city = None
+        donor_blood_type = None
+        
         if email:
             user  = UserRegistrationTbl.objects.filter(email=email).first()
-            donor = DonorTbl.objects.filter(user=user).first()
-            if donor and donor.city:
-                donor_city = donor.city
+            if user:
+                donor = DonorTbl.objects.filter(user=user).first()
+                if donor:
+                    if donor.city:
+                        donor_city = donor.city.strip() # Strip spaces just in case
+                    # Fetch donor's blood type
+                    if donor.blood_id:
+                        b_obj = BloodTypeTbl.objects.filter(blood_id=donor.blood_id).first()
+                        if b_obj:
+                            donor_blood_type = b_obj.blood_type
 
         # Fetch 'Approved' requests
         query = BloodRequestTbl.objects.select_related(
             'recipient', 'hospital'
         ).filter(status='Approved')
 
-        # Filter by donor city if it exists
+        # 2. FIXED CITY FILTER: Check both the request city AND the hospital city
         if donor_city:
-            query = query.filter(city__iexact=donor_city)
+            query = query.filter(
+                Q(city__iexact=donor_city) | Q(hospital__city__iexact=donor_city)
+            )
+
+        # UNIVERSAL DONOR LOGIC: Filter by blood compatibility
+        if donor_blood_type:
+            compatibility = {
+                'O-':  ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'], # Universal Donor!
+                'O+':  ['O+', 'A+', 'B+', 'AB+'],
+                'A-':  ['A-', 'A+', 'AB-', 'AB+'],
+                'A+':  ['A+', 'AB+'],
+                'B-':  ['B-', 'B+', 'AB-', 'AB+'],
+                'B+':  ['B+', 'AB+'],
+                'AB-': ['AB-', 'AB+'],
+                'AB+': ['AB+']
+            }
+            allowed_types = compatibility.get(donor_blood_type, [donor_blood_type])
+            query = query.filter(blood_group__in=allowed_types)
 
         reqs = query.order_by('-request_date')[:10]
 
@@ -287,6 +316,8 @@ def active_requests(request):
             })
         return JsonResponse(data, safe=False)
     except Exception as e:
+        import traceback
+        print("active_requests ERROR:", traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -574,6 +605,9 @@ def get_donor_notifications(request):
     if not email:
         return JsonResponse([], safe=False)
     try:
+        notifications = []
+
+        # 1. Check Appointment Notifications (Existing Logic)
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT
@@ -590,7 +624,7 @@ def get_donor_notifications(request):
                 LIMIT 20
             """, [email])
             rows = cursor.fetchall()
-        notifications = []
+
         for row in rows:
             appt_id, appt_date, status, hospital = row
             date_str = appt_date.strftime('%b %d') if appt_date else 'N/A'
@@ -630,35 +664,72 @@ def get_donor_notifications(request):
                     'appointmentId': appt_id,
                     'read':          False,
                 })
+
+        # 2. Urgent Blood Requests based on COMPATIBILITY MATRIX
         with connection.cursor() as cursor:
+            # First, safely get the donor's city and blood type
             cursor.execute("""
-                SELECT br.request_id, br.blood_group, br.urgency, r.full_name
-                FROM blood_request_tbl br
-                JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
-                JOIN donor_tbl d ON d.blood_id = (
-                    SELECT blood_id FROM blood_type_tbl
-                    WHERE blood_type = br.blood_group LIMIT 1
-                )
+                SELECT d.city, bt.blood_type
+                FROM donor_tbl d
                 JOIN user_registration_tbl u ON d.user_id = u.user_id
+                LEFT JOIN blood_type_tbl bt ON d.blood_id = bt.blood_id
                 WHERE u.email = %s
-                  AND br.status = 'Approved'
-                  AND br.urgency IN ('Critical', 'High')
-                  AND (br.city IS NULL OR br.city = d.city)
-                LIMIT 3
             """, [email])
-            urgent_rows = cursor.fetchall()
-        for row in urgent_rows:
-            req_id, blood_group, urgency, patient_name = row
-            notifications.insert(0, {
-                'id':        f'req-{req_id}-alert',
-                'type':      'urgent',
-                'title':     f'🚨 Urgent {blood_group} Needed!',
-                'message':   f'{patient_name} urgently needs {blood_group} blood. Can you help?',
-                'requestId': req_id,
-                'read':      False,
-            })
+            donor_info = cursor.fetchone()
+
+        if donor_info:
+            donor_city, donor_blood_type = donor_info
+
+            # Universal Donor Logic Matrix
+            compatibility = {
+                'O-':  ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'],
+                'O+':  ['O+', 'A+', 'B+', 'AB+'],
+                'A-':  ['A-', 'A+', 'AB-', 'AB+'],
+                'A+':  ['A+', 'AB+'],
+                'B-':  ['B-', 'B+', 'AB-', 'AB+'],
+                'B+':  ['B+', 'AB+'],
+                'AB-': ['AB-', 'AB+'],
+                'AB+': ['AB+']
+            }
+
+            allowed_types = compatibility.get(donor_blood_type, [donor_blood_type]) if donor_blood_type else []
+
+            # If we successfully found allowed types, fetch matching urgent requests
+            if allowed_types:
+                # Create dynamic %s placeholders based on how many allowed types exist
+                format_strings = ','.join(['%s'] * len(allowed_types))
+                params = [donor_city] + allowed_types
+
+                with connection.cursor() as cursor:
+                    cursor.execute(f"""
+                        SELECT br.request_id, br.blood_group, br.urgency, r.full_name
+                        FROM blood_request_tbl br
+                        JOIN recipient_tbl r ON br.recipient_id = r.recipient_id
+                        WHERE br.status = 'Approved'
+                          AND br.urgency IN ('Critical', 'High')
+                          AND (br.city IS NULL OR br.city = %s)
+                          AND br.blood_group IN ({format_strings})
+                        ORDER BY br.request_date DESC
+                        LIMIT 3
+                    """, params)
+                    urgent_rows = cursor.fetchall()
+
+                # Add urgent requests to the very top of the notifications list
+                for row in urgent_rows:
+                    req_id, blood_group, urgency, patient_name = row
+                    notifications.insert(0, {
+                        'id':        f'req-{req_id}-alert',
+                        'type':      'urgent',
+                        'title':     f'🚨 Urgent {blood_group} Needed!',
+                        'message':   f'{patient_name} urgently needs {blood_group} blood. Can you help?',
+                        'requestId': req_id,
+                        'read':      False,
+                    })
+
         return JsonResponse(notifications[:10], safe=False)
     except Exception as e:
+        import traceback
+        print("get_donor_notifications ERROR:", traceback.format_exc())
         return JsonResponse([], safe=False)
 
 
