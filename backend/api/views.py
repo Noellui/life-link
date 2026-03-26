@@ -2768,6 +2768,9 @@ def admin_finance_report(request):
         total_revenue = 0.0
 
         for r_type, amt in rev_rows:
+            # Skip hardcoded subscription revenue to calculate it dynamically
+            if r_type == 'Subscription':
+                continue
             amount = float(amt)
             revenue_by_category.append({"type": r_type, "amount": amount})
             total_revenue += amount
@@ -2778,14 +2781,22 @@ def admin_finance_report(request):
             total_revenue += patient_fees
 
         subs = []
+        dynamic_subscription_revenue = 0.0
         for h_name, plan, status, e_date, amt_paid in sub_rows:
+            paid_amount = float(amt_paid) if amt_paid is not None else 0.0
+            dynamic_subscription_revenue += paid_amount
             subs.append({
                 "hospitalName": h_name,
                 "planName": plan,
                 "status": status,
                 "endDate": e_date.strftime('%Y-%m-%d') if e_date else 'N/A',
-                "amountPaid": float(amt_paid) if amt_paid is not None else 0.0
+                "amountPaid": paid_amount
             })
+
+        if dynamic_subscription_revenue > 0 or len(subs) > 0:
+            # Insert dynamic subscription revenue at the top
+            revenue_by_category.insert(0, {"type": "Subscription", "amount": dynamic_subscription_revenue})
+            total_revenue += dynamic_subscription_revenue
 
         return JsonResponse({
             "totalRevenue": total_revenue,
@@ -3157,7 +3168,7 @@ def admin_dashboard_trends(request):
                 SELECT 
                     YEAR(request_date) as yr, 
                     MONTH(request_date) as mnth, 
-                    COUNT(*) as requests
+                    COALESCE(SUM(units), 0) as requests
                 FROM blood_request_tbl
                 GROUP BY yr, mnth
             """)
