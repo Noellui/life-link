@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const SupplyDemandReport = () => {
   const [startDate, setStartDate] = useState('');
@@ -71,7 +72,6 @@ const SupplyDemandReport = () => {
       doc.text(`Reporting Period: All Time`, 14, 36);
     }
 
-    // Summary
     autoTable(doc, {
       startY: 45,
       head: [['Metric', 'Value']],
@@ -85,7 +85,6 @@ const SupplyDemandReport = () => {
       headStyles: { fillColor: [31, 41, 55] }
     });
 
-    // Supply vs Demand Table
     doc.setFontSize(14);
     doc.setTextColor(31, 41, 55);
     doc.text("Supply vs Demand by Blood Group", 14, doc.lastAutoTable.finalY + 15);
@@ -98,7 +97,6 @@ const SupplyDemandReport = () => {
       headStyles: { fillColor: [185, 28, 28] }
     });
 
-    // Top Hospitals
     doc.text("Top Requesting Hospitals", 14, doc.lastAutoTable.finalY + 15);
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
@@ -107,6 +105,9 @@ const SupplyDemandReport = () => {
       theme: 'striped',
       headStyles: { fillColor: [75, 85, 99] }
     });
+
+    // ── PDF Footer ──────────────────────────────────────────────────────
+    addPdfFooter(doc, 'Supply & Demand Dynamics');
 
     doc.save(`LifeLink_SupplyDemand_${dateStr.replace(/\//g, '-')}.pdf`);
   };
@@ -127,7 +128,6 @@ const SupplyDemandReport = () => {
     <div className="min-h-screen bg-gray-50 p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
 
-        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <div>
             <h1 className="text-3xl font-black text-gray-900">Supply & Demand Dynamics</h1>
@@ -142,7 +142,6 @@ const SupplyDemandReport = () => {
           </button>
         </div>
 
-        {/* Date Filter */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Start Date</label>
@@ -166,7 +165,6 @@ const SupplyDemandReport = () => {
           <div className="py-10 text-center text-red-600 bg-red-50 rounded-xl font-bold">{error}</div>
         ) : (
           <>
-            {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-gray-800">
                 <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Requests</p>
@@ -188,10 +186,8 @@ const SupplyDemandReport = () => {
               </div>
             </div>
 
-            {/* Main Content */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-              {/* Supply vs Demand Table */}
               <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-5 border-b border-gray-100 bg-gray-50">
                   <h3 className="font-bold text-gray-800">Supply vs Demand by Blood Group</h3>
@@ -231,7 +227,6 @@ const SupplyDemandReport = () => {
                 </div>
               </div>
 
-              {/* Request Status Breakdown */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-fit">
                 <div className="p-5 border-b border-gray-100 bg-gray-50">
                   <h3 className="font-bold text-gray-800">Request Status Breakdown</h3>
@@ -241,9 +236,9 @@ const SupplyDemandReport = () => {
                     const pct = data.totalRequests > 0 ? Math.round((s.count / data.totalRequests) * 100) : 0;
                     const barColor =
                       s.status === 'Fulfilled' || s.status === 'Awaiting Payment' ? 'bg-green-500' :
-                      s.status === 'Pending' ? 'bg-yellow-500' :
-                      s.status === 'Approved' ? 'bg-blue-500' :
-                      s.status === 'Rejected' ? 'bg-red-500' : 'bg-gray-400';
+                        s.status === 'Pending' ? 'bg-yellow-500' :
+                          s.status === 'Approved' ? 'bg-blue-500' :
+                            s.status === 'Rejected' ? 'bg-red-500' : 'bg-gray-400';
                     return (
                       <div key={idx}>
                         <div className="flex justify-between text-sm mb-1">
@@ -262,7 +257,6 @@ const SupplyDemandReport = () => {
                 </div>
               </div>
 
-              {/* Top Requesting Hospitals */}
               <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-5 border-b border-gray-100 bg-gray-50">
                   <h3 className="font-bold text-gray-800">Top Requesting Hospitals</h3>
@@ -292,7 +286,6 @@ const SupplyDemandReport = () => {
                 </div>
               </div>
 
-              {/* Monthly Trends */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-fit">
                 <div className="p-5 border-b border-gray-100 bg-gray-50">
                   <h3 className="font-bold text-gray-800">Monthly Trends (6 Months)</h3>

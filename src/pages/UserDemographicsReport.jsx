@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const UserDemographicsReport = () => {
   const [loading, setLoading] = useState(true);
@@ -60,12 +61,11 @@ const UserDemographicsReport = () => {
     doc.setFontSize(22);
     doc.setTextColor(220, 38, 38);
     doc.text("LifeLink User & Demographic Analytics", 14, 22);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generated on: ${dateStr} | Snapshot: Live System Data`, 14, 30);
 
-    // Summary 
     autoTable(doc, {
       startY: 40,
       head: [['User Category', 'Total Registered']],
@@ -78,11 +78,10 @@ const UserDemographicsReport = () => {
       headStyles: { fillColor: [31, 41, 55] }
     });
 
-    // Gender & Age
     doc.setFontSize(14);
     doc.setTextColor(31, 41, 55);
     doc.text("Donor Profile Breakdown (Gender & Age)", 14, doc.lastAutoTable.finalY + 15);
-    
+
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
       head: [['Metric', 'Category', 'Count']],
@@ -94,7 +93,6 @@ const UserDemographicsReport = () => {
       headStyles: { fillColor: [185, 28, 28] }
     });
 
-    // Geographic Distribution
     doc.text("Geographic Distribution (Top Cities)", 14, doc.lastAutoTable.finalY + 15);
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
@@ -103,6 +101,9 @@ const UserDemographicsReport = () => {
       theme: 'striped',
       headStyles: { fillColor: [75, 85, 99] }
     });
+
+    // ── PDF Footer ──────────────────────────────────────────────────────
+    addPdfFooter(doc, 'User & Demographics Analytics');
 
     doc.save(`LifeLink_Demographics_${dateStr.replace(/\//g, '-')}.pdf`);
   };
@@ -113,56 +114,53 @@ const UserDemographicsReport = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
-        
-        {/* Header Section */}
+
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <div>
             <h1 className="text-3xl font-black text-gray-900">User & Demographic Analytics</h1>
             <p className="text-gray-500 mt-1">Live snapshot of platform adoption, donor profiles, and geographic reach.</p>
           </div>
-          <button 
-            onClick={handleDownloadPDF} 
+          <button
+            onClick={handleDownloadPDF}
             className="bg-gray-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-gray-700 transition flex items-center gap-2 shadow-md"
           >
             <span>📄</span> Export Demographics
           </button>
         </div>
 
-        {/* Filters Section */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap gap-4 items-end">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Start Date</label>
-            <input 
-              type="date" 
-              value={startDate} 
-              onChange={e => setStartDate(e.target.value)} 
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
               className="border border-gray-300 rounded px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
             />
           </div>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">End Date</label>
-            <input 
-              type="date" 
-              value={endDate} 
-              onChange={e => setEndDate(e.target.value)} 
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
               className="border border-gray-300 rounded px-3 py-2 outline-none focus:ring-2 focus:ring-red-500"
             />
           </div>
-          <button 
-            onClick={handleApplyFilters} 
+          <button
+            onClick={handleApplyFilters}
             className="bg-red-600 text-white px-6 py-2 rounded font-bold hover:bg-red-700 transition"
           >
             Apply
           </button>
-          <button 
-            onClick={handleClearFilters} 
+          <button
+            onClick={handleClearFilters}
             className="text-gray-600 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded font-bold transition"
           >
             Clear Filters
           </button>
         </div>
 
-        {/* Top Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500">
             <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Donors</p>
@@ -178,10 +176,8 @@ const UserDemographicsReport = () => {
           </div>
         </div>
 
-        {/* Demographics Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Geographic Distribution */}
+
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden lg:col-span-2">
             <div className="p-5 border-b border-gray-100 bg-gray-50">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">📍 Geographic Reach (Donor Cities)</h3>
@@ -204,7 +200,6 @@ const UserDemographicsReport = () => {
             </table>
           </div>
 
-          {/* Gender Breakdown */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-fit">
             <div className="p-5 border-b border-gray-100 bg-gray-50">
               <h3 className="font-bold text-gray-800">Donor Gender Split</h3>
@@ -219,7 +214,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* Age Distribution */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden lg:col-span-1">
             <div className="p-5 border-b border-gray-100 bg-gray-50">
               <h3 className="font-bold text-gray-800">Donor Age Demographics</h3>
@@ -234,7 +228,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* Blood Type Adoption */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden lg:col-span-2">
             <div className="p-5 border-b border-gray-100 bg-gray-50">
               <h3 className="font-bold text-gray-800">Donor Blood Type Distribution</h3>

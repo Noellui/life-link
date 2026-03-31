@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const InventoryReport = () => {
-  // --- STATE ---
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
+
   const [inventoryData, setInventoryData] = useState({
     totalUnits: 0,
     stockByGroup: [],
@@ -18,7 +18,6 @@ const InventoryReport = () => {
     outflow: 0
   });
 
-  // --- API FETCH ---
   const fetchInventoryData = async (start = '', end = '') => {
     setLoading(true);
     setError(null);
@@ -30,7 +29,7 @@ const InventoryReport = () => {
 
       const response = await fetch(url);
       if (!response.ok) throw new Error("Failed to fetch inventory data");
-      
+
       const data = await response.json();
       setInventoryData({
         totalUnits: data.totalUnits || 0,
@@ -52,7 +51,6 @@ const InventoryReport = () => {
     fetchInventoryData();
   }, []);
 
-  // --- HANDLERS ---
   const handleFilter = () => {
     if ((startDate && !endDate) || (!startDate && endDate)) {
       alert("Please provide both a Start Date and an End Date.");
@@ -71,11 +69,10 @@ const InventoryReport = () => {
     const doc = new jsPDF();
     const dateStr = new Date().toLocaleDateString();
 
-    // Document Header
     doc.setFontSize(22);
-    doc.setTextColor(220, 38, 38); // LifeLink Red
+    doc.setTextColor(220, 38, 38);
     doc.text("LifeLink Global Blood Inventory Report", 14, 22);
-    
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(`Generated on: ${dateStr}`, 14, 30);
@@ -85,7 +82,6 @@ const InventoryReport = () => {
       doc.text(`Reporting Period: All Time`, 14, 36);
     }
 
-    // 1. High-Level Summary
     autoTable(doc, {
       startY: 45,
       head: [['Metric', 'Value']],
@@ -96,23 +92,21 @@ const InventoryReport = () => {
         ['Critical Expiry Alerts (< 7 Days)', `${inventoryData.expiringSoon.length} Units At Risk`]
       ],
       theme: 'striped',
-      headStyles: { fillColor: [31, 41, 55] } 
+      headStyles: { fillColor: [31, 41, 55] }
     });
 
-    // 2. Stock By Blood Group
     doc.setFontSize(14);
     doc.setTextColor(31, 41, 55);
     doc.text("Current Stock by Blood Group", 14, doc.lastAutoTable.finalY + 15);
-    
+
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
       head: [['Blood Group', 'Available Units']],
       body: inventoryData.stockByGroup.map(item => [item.bloodGroup, `${item.units} Units`]),
       theme: 'striped',
-      headStyles: { fillColor: [185, 28, 28] } // Red header for blood
+      headStyles: { fillColor: [185, 28, 28] }
     });
-    
-    // 3. Hospital Breakdown
+
     doc.text("Stock Distribution by Hospital", 14, doc.lastAutoTable.finalY + 15);
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
@@ -122,43 +116,43 @@ const InventoryReport = () => {
       headStyles: { fillColor: [55, 65, 81] }
     });
 
-    // 4. Wastage Alerts
     if (inventoryData.expiringSoon.length > 0) {
-        doc.addPage();
-        doc.setFontSize(16);
-        doc.setTextColor(220, 38, 38);
-        doc.text("⚠️ Critical Expiry Alerts (Action Required)", 14, 20);
-        
-        autoTable(doc, {
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.setTextColor(220, 38, 38);
+      doc.text("⚠️ Critical Expiry Alerts (Action Required)", 14, 20);
+
+      autoTable(doc, {
         startY: 30,
         head: [['Unit ID', 'Blood Group', 'Location', 'Expiry Date']],
         body: inventoryData.expiringSoon.map(alert => [
-            `#${alert.unitId}`, 
-            alert.bloodGroup, 
-            alert.hospital, 
-            alert.expiryDate
+          `#${alert.unitId}`,
+          alert.bloodGroup,
+          alert.hospital,
+          alert.expiryDate
         ]),
         theme: 'striped',
-        headStyles: { fillColor: [220, 38, 38] } // Red header
-        });
+        headStyles: { fillColor: [220, 38, 38] }
+      });
     }
+
+    // ── PDF Footer ──────────────────────────────────────────────────────
+    addPdfFooter(doc, 'Global Blood Inventory Report');
 
     doc.save(`LifeLink_Inventory_Report_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 
-  // --- RENDER ---
   return (
     <div className="min-h-screen bg-gray-50 p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-8 animate-fade-in-up">
-        
-        {/* Header Section */}
+
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100">
           <div>
             <h1 className="text-3xl font-black text-gray-900">Global Inventory & Logistics</h1>
             <p className="text-gray-500 mt-1">Monitor city-wide blood stock, track distribution, and prevent wastage.</p>
           </div>
-          <button 
-            onClick={handleDownloadPDF} 
+          <button
+            onClick={handleDownloadPDF}
             disabled={loading || error}
             className="bg-gray-900 text-white px-6 py-3 rounded-lg font-bold hover:bg-gray-700 transition disabled:opacity-50 flex items-center gap-2 shadow-md"
           >
@@ -166,12 +160,11 @@ const InventoryReport = () => {
           </button>
         </div>
 
-        {/* Date Filter Section (For Inflow/Outflow tracking) */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Start Date (For Logistics)</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none w-48"
@@ -179,8 +172,8 @@ const InventoryReport = () => {
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">End Date (For Logistics)</label>
-            <input 
-              type="date" 
+            <input
+              type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
               className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none w-48"
@@ -198,7 +191,6 @@ const InventoryReport = () => {
           <div className="py-10 text-center text-red-600 bg-red-50 rounded-xl font-bold">{error}</div>
         ) : (
           <>
-            {/* Top Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
                 <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Total System Stock</p>
@@ -216,13 +208,10 @@ const InventoryReport = () => {
               </div>
             </div>
 
-            {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
-              {/* Left Column: Alerts & Blood Breakdown */}
+
               <div className="lg:col-span-2 space-y-8">
-                
-                {/* Expiry Alerts Table */}
+
                 <div className="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
                   <div className="p-5 border-b border-red-100 bg-red-50 flex justify-between items-center">
                     <h3 className="font-bold text-red-800 flex items-center gap-2">⚠️ Expiry Alerts (Next 7 Days)</h3>
@@ -255,11 +244,10 @@ const InventoryReport = () => {
                       </table>
                     </div>
                   ) : (
-                     <div className="p-8 text-center text-sm text-gray-500 font-medium">No units are expiring in the next 7 days. Excellent inventory management!</div>
+                    <div className="p-8 text-center text-sm text-gray-500 font-medium">No units are expiring in the next 7 days. Excellent inventory management!</div>
                   )}
                 </div>
 
-                {/* Stock By Blood Group */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                   <div className="p-5 border-b border-gray-100 bg-gray-50">
                     <h3 className="font-bold text-gray-800">Stock By Blood Group</h3>
@@ -277,7 +265,6 @@ const InventoryReport = () => {
 
               </div>
 
-              {/* Right Column: Hospital Breakdown */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden h-fit">
                 <div className="p-5 border-b border-gray-100 bg-gray-50">
                   <h3 className="font-bold text-gray-800">Stock Distribution</h3>

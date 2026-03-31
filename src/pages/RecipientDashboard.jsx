@@ -147,9 +147,8 @@ export default function RecipientDashboard() {
   // ── Fetch bills on tab switch ──────────────────────────────────────────────
 
   useEffect(() => {
-    if (activeTab !== 'bills') return;
-    setBillsLoading(true);
-    const load = async () => {
+    const loadBills = async () => {
+      setBillsLoading(true);
       if (!user.email) { setBills(MOCK_BILLS); setBillsLoading(false); return; }
       try {
         const res  = await fetch(API.bills(user.email));
@@ -161,8 +160,8 @@ export default function RecipientDashboard() {
         setBillsLoading(false);
       }
     };
-    load();
-  }, [activeTab, user.email]);
+    loadBills();
+  }, [user.email]);
 
   // ── Payment ────────────────────────────────────────────────────────────────
 
