@@ -510,19 +510,28 @@ const printCertificate = (record, userName) => {
                 --border-light: #969696;
             }
             .certificate { width: 297mm; height: 210mm; background: white; position: relative; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
-            .header-bar { background-color: var(--brand-red); height: 25mm; display: flex; align-items: center; justify-content: center; color: white; font-size: 24pt; font-weight: bold; }
+            /* The header-bar class has been removed */
+            
             .frame { margin: 5mm; flex-grow: 1; border: 2mm solid var(--brand-red); position: relative; display: flex; flex-direction: column; align-items: center; padding: 10mm; box-sizing: border-box; }
             .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 80pt; font-weight: 900; color: rgba(0,0,0,0.03); z-index: 0; white-space: nowrap; pointer-events: none; }
-            .content { z-index: 1; text-align: center; width: 100%; }
+            
+            /* Added margin-top to content to balance the vertical spacing */
+            .content { z-index: 1; text-align: center; width: 100%; margin-top: 15mm; }
+            
             h1 { font-family: 'Times New Roman', serif; font-size: 36pt; margin: 10mm 0 5mm 0; color: var(--text-dark); }
             .subtitle { font-size: 16pt; color: var(--text-gray); margin-bottom: 8mm; }
             .donor-name { font-family: 'Times New Roman', serif; font-style: italic; font-size: 52pt; color: var(--brand-red); margin-bottom: 8mm; border-bottom: 1px solid var(--brand-red); display: inline-block; padding: 0 20mm; }
             .details { font-size: 14pt; line-height: 1.6; color: var(--text-gray); }
             .bottom-row { margin-top: auto; width: 100%; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: end; padding-bottom: 10mm; }
             .meta-data { text-align: left; font-size: 10pt; color: var(--text-gray); }
+            
+            /* New class for discreet lifelink branding */
+            .discreet-branding { font-size: 9pt; font-style: italic; color: var(--border-light); margin-top: 4mm; }
+            
             .seal { display: flex; flex-direction: column; align-items: center; justify-content: center; }
             .seal-circle { width: 30mm; height: 30mm; border: 0.5mm solid var(--brand-red); border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 8pt; font-weight: bold; color: var(--brand-red); }
-            .sig-line { border-top: 0.5mm solid var(--border-light); margin-bottom: 2mm; width: 60mm; margin-left: auto; }
+            .signature { text-align: center; }
+            .sig-line { border-top: 0.5mm solid var(--border-light); margin-bottom: 2mm; width: 60mm; margin-left: auto; margin-right: auto; }
             .sig-text { font-size: 10pt; font-weight: bold; }
             .sig-subtext { font-size: 9pt; font-style: italic; color: var(--text-gray); }
             .footer-note { font-size: 8pt; color: var(--border-light); position: absolute; bottom: 2mm; width: 100%; text-align: center; }
@@ -530,7 +539,6 @@ const printCertificate = (record, userName) => {
     </head>
     <body>
         <div class="certificate">
-            <div class="header-bar">LifeLink National Blood Service</div>
             <div class="frame">
                 <div class="watermark">LIFELINK</div>
                 <div class="content">
@@ -540,7 +548,11 @@ const printCertificate = (record, userName) => {
                     <div class="details">For the heroic act of donating — Blood on ${donationDate}.<br>Recorded at ${hospital}.</div>
                 </div>
                 <div class="bottom-row">
-                    <div class="meta-data">Issued: ${issueDate}<br>Cert ID: ${certId}</div>
+                    <div class="meta-data">
+                        Issued: ${issueDate}<br>
+                        Cert ID: ${certId}
+                        <div class="discreet-branding">Issued by LifeLink</div>
+                    </div>
                     <div class="seal"><div class="seal-circle"><span>OFFICIAL</span><span>VERIFIED</span></div></div>
                     <div class="signature">
                         <div class="sig-line"></div>
