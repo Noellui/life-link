@@ -755,7 +755,7 @@ def get_donor_eligibility(request):
                 'lastDonation':     None,
                 'nextEligibleDate': None,
             })
-        next_eligible = last_donation + datetime.timedelta(days=56)
+        next_eligible = last_donation + datetime.timedelta(days=52)
         try:
             today = (
                 datetime.datetime.now(tz=last_donation.tzinfo)

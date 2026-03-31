@@ -10,7 +10,7 @@ const QUESTIONS = [
   { id: 'q_tattoo', label: 'Have you had a tattoo, piercing, or acupuncture in the last 12 months?', yesIsGood: false },
   { id: 'q_alcohol', label: 'Have you consumed alcohol in the last 24 hours?', yesIsGood: false },
   { id: 'q_donated_before', label: 'Have you donated blood before?', yesIsGood: null },
-  { id: 'q_eligibility_wait', label: 'Have you donated blood in the last 56 days (8 weeks)?', yesIsGood: false },
+  { id: 'q_eligibility_wait', label: 'Have you donated blood in the last 52 days?', yesIsGood: false },
 ];
 
 const BASE_URL = 'http://127.0.0.1:8000';
@@ -49,8 +49,8 @@ const ScheduleAppointment = () => {
       setCentersLoading(true);
       try {
         // Get donor's city from localStorage (single key)
-        const stored = 
-          JSON.parse(localStorage.getItem('user_data') || 'null') || 
+        const stored =
+          JSON.parse(localStorage.getItem('user_data') || 'null') ||
           JSON.parse(localStorage.getItem('lifeLinkUser') || 'null');
         let city = stored?.city || '';
 
@@ -136,7 +136,7 @@ const ScheduleAppointment = () => {
       { id: 'q_recent_illness', bad: true, reason: 'You should wait 2 weeks after illness.' },
       { id: 'q_antibiotics', bad: true, reason: 'Please wait 2 weeks after completing antibiotics.' },
       { id: 'q_alcohol', bad: true, reason: 'Please wait 24 hours after alcohol consumption.' },
-      { id: 'q_eligibility_wait', bad: true, reason: 'You must wait 56 days between whole blood donations.' },
+      { id: 'q_eligibility_wait', bad: true, reason: 'You must wait 52 days between whole blood donations.' },
     ];
     for (const rule of disqualifiers) {
       if (answers[rule.id] === rule.bad) {
@@ -160,8 +160,8 @@ const ScheduleAppointment = () => {
     setIsSubmitting(true);
 
     // Single localStorage key
-    const currentUser = 
-      JSON.parse(localStorage.getItem('user_data') || 'null') || 
+    const currentUser =
+      JSON.parse(localStorage.getItem('user_data') || 'null') ||
       JSON.parse(localStorage.getItem('lifeLinkUser') || '{}');
     const questionnaire = { answers, vitals, submittedAt: new Date().toISOString() };
     const selectedCenter = centers.find(c => c.id == formData.center);
@@ -231,8 +231,8 @@ const ScheduleAppointment = () => {
 
   // ── STEP 1: Location & Time ─────────────────────────────────────────────────
   if (step === 1) {
-    const storedUser = 
-      JSON.parse(localStorage.getItem('user_data') || 'null') || 
+    const storedUser =
+      JSON.parse(localStorage.getItem('user_data') || 'null') ||
       JSON.parse(localStorage.getItem('lifeLinkUser') || '{}');
     const donorCity = storedUser?.city || '';
 

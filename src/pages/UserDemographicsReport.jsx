@@ -27,7 +27,6 @@ const UserDemographicsReport = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // New filters
   const [bloodGroupFilter, setBloodGroupFilter] = useState('All');
   const [genderFilter, setGenderFilter] = useState('All');
   const [roleFilter, setRoleFilter] = useState('All');
@@ -64,9 +63,7 @@ const UserDemographicsReport = () => {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchDemographics();
-    }, 400);
+    const timer = setTimeout(() => { fetchDemographics(); }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bloodGroupFilter, genderFilter, roleFilter, citySearch]);
@@ -85,46 +82,56 @@ const UserDemographicsReport = () => {
     setGenderFilter('All');
     setRoleFilter('All');
     setCitySearch('');
-    // The useEffect will trigger fetch automatically because state changes
   };
 
-  // ── Derived filtered data ──────────────────────────────────────────────────
+  // All data is server-side filtered — these are just aliases for clarity
   const filteredCity = demoData.city || [];
   const filteredGender = demoData.gender || [];
   const filteredBlood = demoData.blood || [];
-  const filteredRoles = demoData.roles || [];
-
-  // Filtered summary
-  const filteredSummary = {
-    totalDonors: roleFilter === 'All' || roleFilter === 'Donor' ? demoData.summary.totalDonors : '—',
-    totalRecipients: roleFilter === 'All' || roleFilter === 'Recipient' ? demoData.summary.totalRecipients : '—',
-    totalHospitals: roleFilter === 'All' || roleFilter === 'Hospital' ? demoData.summary.totalHospitals : '—',
-  };
 
   const hasActiveFilters = bloodGroupFilter !== 'All' || genderFilter !== 'All' || roleFilter !== 'All' || citySearch || startDate;
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
     const dateStr = new Date().toLocaleDateString();
+
     doc.setFontSize(22); doc.setTextColor(220, 38, 38);
     doc.text('LifeLink User & Demographic Analytics', 14, 22);
     doc.setFontSize(10); doc.setTextColor(100);
     doc.text(`Generated on: ${dateStr}`, 14, 30);
     doc.text(startDate && endDate ? `Period: ${startDate} to ${endDate}` : 'Period: All Time', 14, 36);
 
+    // Active filter summary line
+    const filterParts = [];
+    if (roleFilter !== 'All') filterParts.push(`Role: ${roleFilter}`);
+    if (bloodGroupFilter !== 'All') filterParts.push(`Blood Group: ${bloodGroupFilter}`);
+    if (genderFilter !== 'All') filterParts.push(`Gender: ${genderFilter}`);
+    if (citySearch) filterParts.push(`City: "${citySearch}"`);
+    let tableStartY = 44;
+    if (filterParts.length > 0) {
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Active Filters — ${filterParts.join(' | ')}`, 14, 42);
+      doc.setTextColor(100);
+      tableStartY = 50;
+    }
+
+    // User summary — show N/A for roles excluded by roleFilter
     autoTable(doc, {
-      startY: 44,
+      startY: tableStartY,
       head: [['User Category', 'Total']],
       body: [
-        ['Active Donors', demoData.summary.totalDonors],
-        ['Registered Recipients', demoData.summary.totalRecipients],
-        ['Partner Hospitals', demoData.summary.totalHospitals],
+        ['Active Donors', roleFilter === 'All' || roleFilter === 'Donor' ? demoData.summary.totalDonors : 'N/A (filtered)'],
+        ['Registered Recipients', roleFilter === 'All' || roleFilter === 'Recipient' ? demoData.summary.totalRecipients : 'N/A (filtered)'],
+        ['Partner Hospitals', roleFilter === 'All' || roleFilter === 'Hospital' ? demoData.summary.totalHospitals : 'N/A (filtered)'],
       ],
       theme: 'striped', headStyles: { fillColor: [31, 41, 55] },
     });
 
     doc.setFontSize(14); doc.setTextColor(31, 41, 55);
-    doc.text('Donor Profile (Gender & Age)', 14, doc.lastAutoTable.finalY + 15);
+    doc.text(
+      `Gender & Age Distribution${genderFilter !== 'All' ? ` — ${genderFilter} only` : ''}`,
+      14, doc.lastAutoTable.finalY + 15
+    );
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
       head: [['Metric', 'Category', 'Count']],
@@ -135,13 +142,29 @@ const UserDemographicsReport = () => {
       theme: 'striped', headStyles: { fillColor: [185, 28, 28] },
     });
 
-    doc.text('Geographic Distribution', 14, doc.lastAutoTable.finalY + 15);
+    doc.text(
+      `Geographic Distribution${citySearch ? ` — filtered: "${citySearch}"` : ''}`,
+      14, doc.lastAutoTable.finalY + 15
+    );
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
-      head: [['City', 'Donors']],
+      head: [['City', 'Count']],
       body: filteredCity.map(c => [c.city, c.count]),
       theme: 'striped', headStyles: { fillColor: [75, 85, 99] },
     });
+
+    if (filteredBlood.length > 0) {
+      doc.text(
+        `Blood Type Distribution${bloodGroupFilter !== 'All' ? ` — ${bloodGroupFilter} only` : ''}`,
+        14, doc.lastAutoTable.finalY + 15
+      );
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 20,
+        head: [['Blood Group', 'Count']],
+        body: filteredBlood.map(b => [b.bloodGroup, b.count]),
+        theme: 'striped', headStyles: { fillColor: [109, 40, 217] },
+      });
+    }
 
     doc.save(`LifeLink_Demographics_${dateStr.replace(/\//g, '-')}.pdf`);
   };
@@ -169,7 +192,6 @@ const UserDemographicsReport = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-5">
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Filters</p>
 
-          {/* Date row */}
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Start Date</label>
@@ -187,7 +209,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* Role filter */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">User Role</label>
             <div className="flex flex-wrap gap-2">
@@ -199,7 +220,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* Blood group filter */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Blood Group</label>
             <div className="flex flex-wrap gap-2">
@@ -210,7 +230,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* Gender filter */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Gender</label>
             <div className="flex flex-wrap gap-2">
@@ -221,7 +240,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* City search */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">City Search</label>
             <div className="relative w-72">
@@ -236,7 +254,6 @@ const UserDemographicsReport = () => {
             </div>
           </div>
 
-          {/* Active filter badges */}
           {hasActiveFilters && (
             <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
               <span className="text-xs text-gray-400 font-bold self-center">Active:</span>
@@ -277,15 +294,15 @@ const UserDemographicsReport = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className={`bg-white p-6 rounded-xl shadow-sm border-l-4 ${roleFilter === 'Recipient' || roleFilter === 'Hospital' ? 'border-gray-200 opacity-50' : 'border-red-500'}`}>
             <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Donors</p>
-            <p className="text-4xl font-black text-gray-800 mt-2">{filteredSummary.totalDonors}</p>
+            <p className="text-4xl font-black text-gray-800 mt-2">{demoData.summary.totalDonors}</p>
           </div>
           <div className={`bg-white p-6 rounded-xl shadow-sm border-l-4 ${roleFilter === 'Donor' || roleFilter === 'Hospital' ? 'border-gray-200 opacity-50' : 'border-blue-500'}`}>
             <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Total Recipients</p>
-            <p className="text-4xl font-black text-gray-800 mt-2">{filteredSummary.totalRecipients}</p>
+            <p className="text-4xl font-black text-gray-800 mt-2">{demoData.summary.totalRecipients}</p>
           </div>
           <div className={`bg-white p-6 rounded-xl shadow-sm border-l-4 ${roleFilter === 'Donor' || roleFilter === 'Recipient' ? 'border-gray-200 opacity-50' : 'border-purple-500'}`}>
             <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Partner Hospitals</p>
-            <p className="text-4xl font-black text-gray-800 mt-2">{filteredSummary.totalHospitals}</p>
+            <p className="text-4xl font-black text-gray-800 mt-2">{demoData.summary.totalHospitals}</p>
           </div>
         </div>
 
@@ -306,7 +323,7 @@ const UserDemographicsReport = () => {
               <thead className="bg-white">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">City / Region</th>
-                  <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Registered Donors</th>
+                  <th className="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase">Count</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -377,8 +394,7 @@ const UserDemographicsReport = () => {
               {filteredBlood.map((b, idx) => (
                 <div key={idx}
                   onClick={() => setBloodGroupFilter(b.bloodGroup === bloodGroupFilter ? 'All' : b.bloodGroup)}
-                  className={`p-4 border rounded-lg text-center cursor-pointer transition hover:shadow-md ${bloodGroupFilter === b.bloodGroup ? 'border-red-400 bg-red-50' : 'border-gray-100 bg-gray-50/50'
-                    }`}>
+                  className={`p-4 border rounded-lg text-center cursor-pointer transition hover:shadow-md ${bloodGroupFilter === b.bloodGroup ? 'border-red-400 bg-red-50' : 'border-gray-100 bg-gray-50/50'}`}>
                   <div className="text-sm font-bold text-red-600 mb-1">{b.bloodGroup}</div>
                   <div className="text-2xl font-black text-gray-800">{b.count}</div>
                 </div>

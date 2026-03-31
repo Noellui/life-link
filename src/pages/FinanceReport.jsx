@@ -83,6 +83,7 @@ const FinanceReport = () => {
     const handleDownloadPDF = () => {
         const doc = new jsPDF();
         const dateStr = new Date().toLocaleDateString();
+
         doc.setFontSize(22);
         doc.setTextColor(220, 38, 38);
         doc.text('LifeLink Financial & Revenue Report', 14, 22);
@@ -91,8 +92,20 @@ const FinanceReport = () => {
         doc.text(`Generated on: ${dateStr}`, 14, 30);
         doc.text(startDate && endDate ? `Period: ${startDate} to ${endDate}` : 'Period: All Time', 14, 36);
 
+        // Active filter summary line
+        const filterParts = [];
+        if (subStatusFilter !== 'All') filterParts.push(`Subscription Status: ${subStatusFilter}`);
+        if (hospitalSearch) filterParts.push(`Hospital: "${hospitalSearch}"`);
+        let tableStartY = 45;
+        if (filterParts.length > 0) {
+            doc.setTextColor(80, 80, 80);
+            doc.text(`Active Filters — ${filterParts.join(' | ')}`, 14, 42);
+            doc.setTextColor(100);
+            tableStartY = 50;
+        }
+
         autoTable(doc, {
-            startY: 45,
+            startY: tableStartY,
             head: [['Metric', 'Amount (INR)']],
             body: [['Total Platform Revenue', `Rs. ${financeData.totalRevenue.toLocaleString()}`]],
             theme: 'striped',
@@ -109,11 +122,20 @@ const FinanceReport = () => {
             headStyles: { fillColor: [55, 65, 81] },
         });
 
-        doc.text('Hospital Subscriptions', 14, doc.lastAutoTable.finalY + 15);
+        const subsCountNote = filteredSubs.length !== financeData.hospitalSubscriptions.length
+            ? ` (${filteredSubs.length} of ${financeData.hospitalSubscriptions.length} shown)`
+            : ` (${filteredSubs.length} total)`;
+        doc.text(`Hospital Subscriptions${subsCountNote}`, 14, doc.lastAutoTable.finalY + 15);
         autoTable(doc, {
             startY: doc.lastAutoTable.finalY + 20,
             head: [['Hospital', 'Plan', 'Status', 'Expiry', 'Amount Paid']],
-            body: filteredSubs.map(s => [s.hospitalName, s.planName, s.status, s.endDate, `Rs. ${s.amountPaid.toLocaleString()}`]),
+            body: filteredSubs.map(s => [
+                s.hospitalName,
+                s.planName || 'Standard',
+                s.status,
+                s.endDate,
+                `Rs. ${(s.amountPaid || 0).toLocaleString()}`,
+            ]),
             theme: 'striped',
             headStyles: { fillColor: [75, 85, 99] },
         });
@@ -164,8 +186,6 @@ const FinanceReport = () => {
                             <button onClick={handleClear} className="bg-gray-100 text-gray-700 px-5 py-2 rounded-lg text-sm font-bold hover:bg-gray-200">Reset All</button>
                         </div>
                     </div>
-
-
 
                     {/* Subscription Status filter */}
                     <div>
@@ -240,7 +260,6 @@ const FinanceReport = () => {
                             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                                 <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                                     <h3 className="font-bold text-gray-800">Revenue by Category</h3>
-
                                 </div>
                                 <table className="min-w-full divide-y divide-gray-200">
                                     <thead className="bg-white">

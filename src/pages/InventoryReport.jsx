@@ -30,10 +30,9 @@ const InventoryReport = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // New filters
   const [bloodGroupFilter, setBloodGroupFilter] = useState('All');
   const [hospitalSearch, setHospitalSearch] = useState('');
-  const [expiryWindow, setExpiryWindow] = useState(null); // days or null
+  const [expiryWindow, setExpiryWindow] = useState(null);
   const [expiryWindowLabel, setExpiryWindowLabel] = useState('All');
 
   const [inventoryData, setInventoryData] = useState({
@@ -97,10 +96,7 @@ const InventoryReport = () => {
   const filteredHospitalStock = inventoryData.hospitalStock
     .map(h => {
       if (bloodGroupFilter === 'All') return h;
-      return {
-        ...h,
-        units: h.breakdown?.[bloodGroupFilter] || 0
-      };
+      return { ...h, units: h.breakdown?.[bloodGroupFilter] || 0 };
     })
     .filter(h => {
       const matchesSearch = !hospitalSearch || h.hospitalName.toLowerCase().includes(hospitalSearch.toLowerCase());
@@ -128,35 +124,54 @@ const InventoryReport = () => {
   const handleDownloadPDF = () => {
     const doc = new jsPDF();
     const dateStr = new Date().toLocaleDateString();
+
     doc.setFontSize(22); doc.setTextColor(220, 38, 38);
     doc.text('LifeLink Global Blood Inventory Report', 14, 22);
     doc.setFontSize(10); doc.setTextColor(100);
     doc.text(`Generated on: ${dateStr}`, 14, 30);
     doc.text(startDate && endDate ? `Period: ${startDate} to ${endDate}` : 'Period: All Time', 14, 36);
-    if (bloodGroupFilter !== 'All') doc.text(`Blood Group Filter: ${bloodGroupFilter}`, 14, 42);
+
+    // Active filter summary line
+    const filterParts = [];
+    if (bloodGroupFilter !== 'All') filterParts.push(`Blood Group: ${bloodGroupFilter}`);
+    if (expiryWindowLabel !== 'All') filterParts.push(`Expiry Window: ${expiryWindowLabel}`);
+    if (hospitalSearch) filterParts.push(`Hospital: "${hospitalSearch}"`);
+    let tableStartY = 45;
+    if (filterParts.length > 0) {
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Active Filters — ${filterParts.join(' | ')}`, 14, 42);
+      doc.setTextColor(100);
+      tableStartY = 50;
+    }
 
     autoTable(doc, {
-      startY: 50,
+      startY: tableStartY,
       head: [['Metric', 'Value']],
       body: [
-        ['Total Available Units', `${filteredTotalUnits} Units`],
-        ['Inflow', `${inventoryData.inflow} Units`],
-        ['Outflow', `${inventoryData.outflow} Units`],
-        ['Expiry Alerts', `${filteredExpiringSoon.length} Units`],
+        [bloodGroupFilter !== 'All' ? `${bloodGroupFilter} Stock` : 'Total Available Units', `${filteredTotalUnits} Units`],
+        ['Inflow (Donations)', `${inventoryData.inflow} Units`],
+        ['Outflow (Fulfilled Requests)', `${inventoryData.outflow} Units`],
+        [`Expiry Alerts${expiryWindowLabel !== 'All' ? ` (${expiryWindowLabel})` : ' (Next 7 days)'}`, `${filteredExpiringSoon.length} units at risk`],
       ],
       theme: 'striped', headStyles: { fillColor: [31, 41, 55] },
     });
 
     doc.setFontSize(14); doc.setTextColor(31, 41, 55);
-    doc.text('Stock by Blood Group', 14, doc.lastAutoTable.finalY + 15);
+    doc.text(
+      `Stock by Blood Group${bloodGroupFilter !== 'All' ? ` — ${bloodGroupFilter} only` : ''}`,
+      14, doc.lastAutoTable.finalY + 15
+    );
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
-      head: [['Blood Group', 'Units']],
+      head: [['Blood Group', 'Units Available']],
       body: filteredStockByGroup.map(i => [i.bloodGroup, `${i.units} Units`]),
       theme: 'striped', headStyles: { fillColor: [185, 28, 28] },
     });
 
-    doc.text('Hospital Stock', 14, doc.lastAutoTable.finalY + 15);
+    doc.text(
+      `Hospital Stock Distribution${hospitalSearch ? ` (filtered: "${hospitalSearch}")` : ''}${bloodGroupFilter !== 'All' ? ` — ${bloodGroupFilter}` : ''}`,
+      14, doc.lastAutoTable.finalY + 15
+    );
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 20,
       head: [['Hospital', 'Units']],
@@ -167,7 +182,10 @@ const InventoryReport = () => {
     if (filteredExpiringSoon.length > 0) {
       doc.addPage();
       doc.setFontSize(16); doc.setTextColor(220, 38, 38);
-      doc.text('Critical Expiry Alerts', 14, 20);
+      doc.text(
+        `Critical Expiry Alerts${expiryWindowLabel !== 'All' ? ` — ${expiryWindowLabel}` : ''}${bloodGroupFilter !== 'All' ? ` — ${bloodGroupFilter}` : ''}`,
+        14, 20
+      );
       autoTable(doc, {
         startY: 30,
         head: [['Unit ID', 'Blood Group', 'Hospital', 'Expiry Date']],
@@ -175,6 +193,7 @@ const InventoryReport = () => {
         theme: 'striped', headStyles: { fillColor: [220, 38, 38] },
       });
     }
+
     doc.save(`LifeLink_Inventory_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 
@@ -200,7 +219,6 @@ const InventoryReport = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-5">
           <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Filters</p>
 
-          {/* Date + logistics row */}
           <div className="flex flex-wrap items-end gap-4">
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Start Date</label>
@@ -218,7 +236,6 @@ const InventoryReport = () => {
             </div>
           </div>
 
-          {/* Blood group pills */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Blood Group</label>
             <div className="flex flex-wrap gap-2">
@@ -229,7 +246,6 @@ const InventoryReport = () => {
             </div>
           </div>
 
-          {/* Expiry window */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Expiry Risk Window</label>
             <div className="flex flex-wrap gap-2">
@@ -241,7 +257,6 @@ const InventoryReport = () => {
             </div>
           </div>
 
-          {/* Hospital search */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Hospital Search</label>
             <div className="relative w-72">
@@ -256,7 +271,6 @@ const InventoryReport = () => {
             </div>
           </div>
 
-          {/* Active badges */}
           {hasActiveFilters && (
             <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
               <span className="text-xs text-gray-400 font-bold self-center">Active:</span>
@@ -372,8 +386,7 @@ const InventoryReport = () => {
                     {filteredStockByGroup.map((bg, idx) => (
                       <div key={idx}
                         onClick={() => setBloodGroupFilter(bg.bloodGroup === bloodGroupFilter ? 'All' : bg.bloodGroup)}
-                        className={`p-4 border rounded-lg text-center cursor-pointer transition hover:shadow-md ${bloodGroupFilter === bg.bloodGroup ? 'border-red-400 bg-red-50' : 'border-gray-100'
-                          }`}>
+                        className={`p-4 border rounded-lg text-center cursor-pointer transition hover:shadow-md ${bloodGroupFilter === bg.bloodGroup ? 'border-red-400 bg-red-50' : 'border-gray-100'}`}>
                         <div className="text-sm font-bold text-gray-500 mb-1">{bg.bloodGroup}</div>
                         <div className={`text-2xl font-black ${bg.units === 0 ? 'text-red-500' : 'text-gray-900'}`}>{bg.units}</div>
                         <div className="text-xs text-gray-400 mt-1">Units</div>

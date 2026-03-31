@@ -144,7 +144,7 @@ const DonorDashboard = () => {
 
   const EligibilityCard = () => {
     const { eligible, daysRemaining, nextEligibleDate, lastDonation } = eligibility;
-    const progressPct = eligible ? 100 : Math.round(((56 - daysRemaining) / 56) * 100);
+    const progressPct = eligible ? 100 : Math.round(((52 - daysRemaining) / 52) * 100);
 
     return (
       <div className={`rounded-xl shadow-sm border overflow-hidden ${eligible ? 'border-green-200 bg-green-50' : 'border-orange-200 bg-orange-50'}`}>
@@ -201,7 +201,7 @@ const DonorDashboard = () => {
               </div>
 
               <p className="text-xs text-gray-500 mt-3 text-center">
-                Whole blood donors must wait 56 days between donations to ensure full recovery.
+                Whole blood donors must wait 52 days between donations to ensure full recovery.
               </p>
             </div>
           )}
@@ -225,11 +225,10 @@ const DonorDashboard = () => {
           </div>
           <Link
             to="/schedule"
-            className={`px-6 py-2 rounded-lg font-medium transition shadow-md w-full md:w-auto text-center ${
-              eligibility.eligible
-                ? 'bg-red-600 text-white hover:bg-red-700'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
+            className={`px-6 py-2 rounded-lg font-medium transition shadow-md w-full md:w-auto text-center ${eligibility.eligible
+              ? 'bg-red-600 text-white hover:bg-red-700'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
             onClick={e => { if (!eligibility.eligible) e.preventDefault(); }}
             title={!eligibility.eligible ? `Eligible in ${eligibility.daysRemaining} days` : ''}
           >
@@ -292,13 +291,12 @@ const DonorDashboard = () => {
                         <button
                           onClick={() => handleDonateClick(req)}
                           disabled={isLoading || !eligibility.eligible}
-                          className={`w-full font-bold py-2 rounded-lg transition ${
-                            !eligibility.eligible
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                              : isLoading
+                          className={`w-full font-bold py-2 rounded-lg transition ${!eligibility.eligible
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : isLoading
                               ? 'bg-red-300 text-white cursor-wait'
                               : 'bg-red-600 text-white hover:bg-red-700'
-                          }`}
+                            }`}
                           title={!eligibility.eligible ? `You are not yet eligible to donate (${eligibility.daysRemaining} days remaining)` : ''}
                         >
                           {isLoading ? 'Notifying...' : eligibility.eligible ? 'I Can Donate' : `Eligible in ${eligibility.daysRemaining}d`}
@@ -339,13 +337,12 @@ const DonorDashboard = () => {
                         <td className="px-6 py-4">{item.location}</td>
                         <td className="px-6 py-4">{item.units} Unit</td>
                         <td className="px-6 py-4">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            item.status?.toLowerCase().trim() === 'fulfilled' ? 'bg-green-100 text-green-800' :
-                            item.status?.toLowerCase().trim() === 'pending'   ? 'bg-yellow-100 text-yellow-800' :
-                            item.status?.toLowerCase().trim() === 'confirmed' ? 'bg-blue-100 text-blue-800' :
-                            item.status?.toLowerCase().trim() === 'canceled'  ? 'bg-gray-100 text-gray-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${item.status?.toLowerCase().trim() === 'fulfilled' ? 'bg-green-100 text-green-800' :
+                            item.status?.toLowerCase().trim() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              item.status?.toLowerCase().trim() === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                                item.status?.toLowerCase().trim() === 'canceled' ? 'bg-gray-100 text-gray-800' :
+                                  'bg-red-100 text-red-800'
+                            }`}>
                             {item.status}
                           </span>
                         </td>
@@ -378,22 +375,20 @@ const DonorDashboard = () => {
           <div className="space-y-6">
             <EligibilityCard />
             {myAppointment ? (
-              <div className={`rounded-xl shadow-md border overflow-hidden ${
-                myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed'
-                  ? 'border-gray-200 bg-gray-50'
-                  : 'border-red-100 bg-white'
-              }`}>
-                <div className={`px-6 py-3 ${
-                  myAppointment.status === 'Confirmed' ? 'bg-green-600' :
-                  myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' ? 'bg-gray-500' :
-                  'bg-yellow-500'
+              <div className={`rounded-xl shadow-md border overflow-hidden ${myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed'
+                ? 'border-gray-200 bg-gray-50'
+                : 'border-red-100 bg-white'
                 }`}>
+                <div className={`px-6 py-3 ${myAppointment.status === 'Confirmed' ? 'bg-green-600' :
+                  myAppointment.status === 'Rejected' || myAppointment.status === 'Screening Failed' ? 'bg-gray-500' :
+                    'bg-yellow-500'
+                  }`}>
                   <h3 className="text-white font-bold text-sm uppercase tracking-wide">
                     {myAppointment.status === 'Confirmed' ? 'Appointment Confirmed ✅' :
-                     myAppointment.status === 'Rejected' ? 'Appointment Declined ❌' :
-                     myAppointment.status === 'Pending' ? 'Upcoming Appointment ⏳' :
-                     myAppointment.status === 'Screening Failed' ? 'Screening Unsuccessful ⚠️' :
-                     'Request Pending ⏳'}
+                      myAppointment.status === 'Rejected' ? 'Appointment Declined ❌' :
+                        myAppointment.status === 'Pending' ? 'Upcoming Appointment ⏳' :
+                          myAppointment.status === 'Screening Failed' ? 'Screening Unsuccessful ⚠️' :
+                            'Request Pending ⏳'}
                   </h3>
                 </div>
 

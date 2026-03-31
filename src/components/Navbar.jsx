@@ -8,46 +8,59 @@ const Navbar = ({ user, onLogout }) => {
   const [unpaidCount, setUnpaidCount] = useState(0);
 
   // --- STYLING HELPER ---
-  const navLinkStyles = ({ isActive }) => 
-    `transition font-medium pb-1 flex items-center gap-1 ${
-      isActive 
-        ? 'text-red-600 border-b-2 border-red-600' 
-        : 'text-gray-600 hover:text-red-600'
+  const navLinkStyles = ({ isActive }) =>
+    `transition font-medium pb-1 flex items-center gap-1 ${isActive
+      ? 'text-red-600 border-b-2 border-red-600'
+      : 'text-gray-600 hover:text-red-600'
     }`;
 
-  // --- FETCH UNPAID BILLS FOR RECIPIENT FROM DATABASE ---
+  const [eligibility, setEligibility] = useState({ eligible: true, daysRemaining: 0 });
+
+  // --- FETCH UNPAID BILLS FOR RECIPIENT & ELIGIBILITY FOR DONOR FROM DATABASE ---
   useEffect(() => {
-    const fetchUnpaidBills = async () => {
-      if (user && user.role === 'Recipient') {
+    const fetchUserData = async () => {
+      if (user) {
         // Fallback to local storage if user.email isn't directly on the user prop
         const userEmail = user.email || JSON.parse(localStorage.getItem('user_data') || localStorage.getItem('lifeLinkUser') || '{}').email;
-        
+
         if (!userEmail) return;
 
-        try {
-          const res = await fetch(`http://127.0.0.1:8000/api/recipient/bills/?email=${encodeURIComponent(userEmail)}`);
-          if (res.ok) {
-            const data = await res.json();
-            // Count purely from database response, no mock fallbacks
-            if (Array.isArray(data)) {
-              const unpaid = data.filter(bill => bill.paymentStatus === 'Unpaid').length;
-              setUnpaidCount(unpaid);
-            } else {
-              setUnpaidCount(0);
+        if (user.role === 'Recipient') {
+          try {
+            const res = await fetch(`http://127.0.0.1:8000/api/recipient/bills/?email=${encodeURIComponent(userEmail)}`);
+            if (res.ok) {
+              const data = await res.json();
+              // Count purely from database response, no mock fallbacks
+              if (Array.isArray(data)) {
+                const unpaid = data.filter(bill => bill.paymentStatus === 'Unpaid').length;
+                setUnpaidCount(unpaid);
+              } else {
+                setUnpaidCount(0);
+              }
             }
+          } catch (error) {
+            console.error("Failed to fetch unpaid bills count:", error);
+            setUnpaidCount(0);
           }
-        } catch (error) {
-          console.error("Failed to fetch unpaid bills count:", error);
-          setUnpaidCount(0);
+        } else if (user.role === 'Donor') {
+          try {
+            const res = await fetch(`http://127.0.0.1:8000/api/donor/eligibility/?email=${encodeURIComponent(userEmail)}`);
+            if (res.ok) {
+              const data = await res.json();
+              setEligibility(data);
+            }
+          } catch (error) {
+            console.error("Failed to fetch eligibility:", error);
+          }
         }
       }
     };
 
-    fetchUnpaidBills();
+    fetchUserData();
 
     // Listen for storage changes so the badge updates immediately when a bill is paid
-    window.addEventListener('storage', fetchUnpaidBills);
-    return () => window.removeEventListener('storage', fetchUnpaidBills);
+    window.addEventListener('storage', fetchUserData);
+    return () => window.removeEventListener('storage', fetchUserData);
   }, [user]);
 
   if (user && user.role === 'Admin') {
@@ -60,7 +73,7 @@ const Navbar = ({ user, onLogout }) => {
   };
 
   const handleScroll = (id) => {
-    setIsServicesOpen(false); 
+    setIsServicesOpen(false);
     if (location.pathname === '/') {
       const element = document.getElementById(id);
       if (element) {
@@ -77,8 +90,8 @@ const Navbar = ({ user, onLogout }) => {
       return (
         <>
           <NavLink to="/" end className={navLinkStyles}>Home</NavLink>
-          
-          <div 
+
+          <div
             className="relative"
             onMouseEnter={() => setIsServicesOpen(true)}
             onMouseLeave={() => setIsServicesOpen(false)}
@@ -107,15 +120,28 @@ const Navbar = ({ user, onLogout }) => {
 
     // 2. DONOR NAVIGATION
     if (user.role === 'Donor') {
+      const canBook = eligibility.eligible;
       return (
         <>
           <NavLink to="/dashboard/donor" className={navLinkStyles}>Dashboard</NavLink>
           <NavLink to="/history" className={navLinkStyles}>My History</NavLink>
           <NavLink to="/DonationCamps" className={navLinkStyles}>Nearby Camps</NavLink>
-          
+
           <div className="flex items-center space-x-4 ml-4">
             <button onClick={handleLogoutClick} className="text-gray-600 hover:text-red-600 font-medium">Log Out</button>
-            <NavLink to="/schedule" className="bg-red-600 text-white px-5 py-2 rounded-full font-medium hover:bg-red-700 transition shadow-md">Schedule Appointment</NavLink>
+            {canBook ? (
+              <NavLink to="/schedule" className="bg-red-600 text-white px-5 py-2 rounded-full font-medium hover:bg-red-700 transition shadow-md">Schedule Appointment</NavLink>
+            ) : (
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  alert(`You are allowed to book an appointment only after 52 days since your last donation.\n\nPlease wait ${eligibility.daysRemaining} more days.`);
+                }}
+                className="bg-gray-300 text-gray-500 cursor-not-allowed px-5 py-2 rounded-full font-medium shadow-sm transition"
+              >
+                Schedule Appointment
+              </button>
+            )}
           </div>
         </>
       );
@@ -129,7 +155,7 @@ const Navbar = ({ user, onLogout }) => {
           <NavLink to="/patient-requests" className={navLinkStyles}>Patient Requests</NavLink>
           <NavLink to="/hospital/appointments" className={navLinkStyles}>Donor Appointments</NavLink>
           <NavLink to="/hospital/events" className={navLinkStyles}>Manage Events</NavLink>
-          
+
           <div className="flex items-center space-x-4 ml-4">
             <button onClick={handleLogoutClick} className="text-gray-600 hover:text-red-600 font-medium">Log Out</button>
             <NavLink to="/manage-stock" className="bg-blue-600 text-white px-5 py-2 rounded-full font-medium hover:bg-blue-700 transition shadow-md">View Stock</NavLink>
@@ -144,7 +170,7 @@ const Navbar = ({ user, onLogout }) => {
         <>
           <NavLink to="/dashboard/recipient" className={navLinkStyles}>Dashboard</NavLink>
           <NavLink to="/my-requests" className={navLinkStyles}>Track Requests</NavLink>
-          
+
           <NavLink to="/my-bills" className={navLinkStyles}>
             My Bills
             {unpaidCount > 0 && (
