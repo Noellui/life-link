@@ -2857,13 +2857,22 @@ def admin_inventory_report(request):
 
             # 4. Stock Distribution by Hospital
             cursor.execute("""
-                SELECT h.hospital_name, COALESCE(SUM(bs.quantity), 0) as total_stock
+                SELECT h.hospital_name, bt.blood_type, COALESCE(SUM(bs.quantity), 0)
                 FROM hospital_registration_tbl h
                 JOIN blood_storage_tbl bs ON h.hospital_id = bs.hospital_id AND bs.status = 'Available'
-                GROUP BY h.hospital_id, h.hospital_name
-                ORDER BY total_stock DESC
+                JOIN blood_type_tbl bt ON bs.blood_id = bt.blood_id
+                GROUP BY h.hospital_id, h.hospital_name, bt.blood_id, bt.blood_type
             """)
-            hospital_stock = [{"hospitalName": row[0], "units": int(row[1])} for row in cursor.fetchall()]
+            hosp_dict = {}
+            for row in cursor.fetchall():
+                h_name, b_type, qty = row[0], row[1], int(row[2])
+                if h_name not in hosp_dict:
+                    hosp_dict[h_name] = {"hospitalName": h_name, "units": 0, "breakdown": {}}
+                
+                hosp_dict[h_name]["units"] += qty
+                hosp_dict[h_name]["breakdown"][b_type] = qty
+            
+            hospital_stock = sorted(list(hosp_dict.values()), key=lambda x: x["units"], reverse=True)
 
             # 5. Inflow (Donations) vs Outflow (Fulfilled Requests) based on Date Range
             cursor.execute(f"""
@@ -2923,35 +2932,72 @@ def admin_demographics_report(request):
             total_recipients = sum(r["count"] for r in roles_distribution if r["role"] == "Recipient")
             total_hospitals = sum(r["count"] for r in roles_distribution if r["role"] == "Hospital")
 
-            # 2. Donor Gender Distribution
-            cursor.execute(f"""
-                SELECT COALESCE(gender, 'Not Specified'), COUNT(*)
-                FROM donor_tbl
-                {date_filter_donor}
-                GROUP BY gender
-            """, date_params)
-            gender_rows = cursor.fetchall()
-            gender_distribution = [{"gender": row[0], "count": row[1]} for row in gender_rows]
+            role = request.GET.get('role')
+            blood_group = request.GET.get('blood_group')
+            gender = request.GET.get('gender')
+            city = request.GET.get('city')
 
-            # 3. Donor City Distribution
-            cursor.execute(f"""
-                SELECT COALESCE(city, 'Unknown'), COUNT(*) as city_count
-                FROM donor_tbl
-                {date_filter_donor}
-                GROUP BY city
-                ORDER BY city_count DESC
-            """, date_params)
-            city_rows = cursor.fetchall()
-            city_distribution = [{"city": row[0], "count": row[1]} for row in city_rows]
+            unified_queries = []
+            unified_queries.append("""
+                SELECT 'Donor' as role, d.gender, d.city, d.date_of_birth, bt.blood_type, d.registration_date 
+                FROM donor_tbl d
+                LEFT JOIN blood_type_tbl bt ON d.blood_id = bt.blood_id
+            """)
+            unified_queries.append("""
+                SELECT 'Recipient' as role, r.gender, r.city, r.dob as date_of_birth, bt.blood_type, NULL as registration_date 
+                FROM recipient_tbl r
+                JOIN user_registration_tbl u ON r.user_id = u.user_id
+                LEFT JOIN blood_type_tbl bt ON r.blood_id = bt.blood_id
+            """)
+            unified_queries.append("""
+                SELECT 'Hospital' as role, 'Not Specified' as gender, h.city, NULL as date_of_birth, NULL as blood_type, NULL as registration_date 
+                FROM hospital_registration_tbl h
+                JOIN user_registration_tbl u ON h.user_id = u.user_id
+            """)
+            
+            combined_sql = " UNION ALL ".join(unified_queries)
+            
+            conditions = ["1=1"]
+            params = []
+            
+            if start_date and end_date:
+                conditions.append("registration_date >= %s AND registration_date <= %s")
+                params.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+            if gender and gender != 'All':
+                conditions.append("gender = %s")
+                params.append(gender)
+            if city:
+                conditions.append("city LIKE %s")
+                params.append(f"%{city}%")
+            if blood_group and blood_group != 'All':
+                conditions.append("blood_type = %s")
+                params.append(blood_group)
+            if role and role != 'All':
+                conditions.append("role = %s")
+                params.append(role)
+                
+            filtered_query = f"SELECT * FROM ({combined_sql}) AS combined WHERE " + " AND ".join(conditions)
 
-            # 4. Age Distribution (Calculate from DOB)
-            age_query = f"SELECT date_of_birth FROM donor_tbl {date_filter_donor + ' AND' if date_filter_donor else 'WHERE'} date_of_birth IS NOT NULL"
-            cursor.execute(age_query, date_params)
+            # 2. Gender Distribution
+            cursor.execute(f"SELECT COALESCE(NULLIF(TRIM(gender), ''), 'Not Specified'), COUNT(*) FROM ({filtered_query}) AS f GROUP BY 1", params)
+            
+            # Combine duplicates manually if any still persist, though GROUP BY 1 resolves it cleanly
+            gender_dict = {}
+            for row in cursor.fetchall():
+                g_val = row[0]
+                gender_dict[g_val] = gender_dict.get(g_val, 0) + row[1]
+            gender_distribution = [{"gender": k, "count": v} for k, v in gender_dict.items()]
+
+            # 3. City Distribution
+            cursor.execute(f"SELECT COALESCE(city, 'Unknown'), COUNT(*) as cnt FROM ({filtered_query}) AS f GROUP BY city ORDER BY cnt DESC", params)
+            city_distribution = [{"city": row[0], "count": row[1]} for row in cursor.fetchall() if row[0] is not None]
+
+            # 4. Age Distribution
+            cursor.execute(f"SELECT date_of_birth FROM ({filtered_query}) AS f WHERE date_of_birth IS NOT NULL", params)
             dob_rows = cursor.fetchall()
-
+            
             age_buckets = {"18-24": 0, "25-34": 0, "35-44": 0, "45-54": 0, "55+": 0}
             today = datetime.date.today()
-
             for row in dob_rows:
                 dob = row[0]
                 if dob:
@@ -2961,19 +3007,11 @@ def admin_demographics_report(request):
                     elif age < 45: age_buckets["35-44"] += 1
                     elif age < 55: age_buckets["45-54"] += 1
                     else: age_buckets["55+"] += 1
-
             age_distribution = [{"ageGroup": k, "count": v} for k, v in age_buckets.items() if v > 0]
 
-            # 5. Donor Blood Type Distribution
-            cursor.execute(f"""
-                SELECT bt.blood_type, COUNT(d.donor_id)
-                FROM blood_type_tbl bt
-                LEFT JOIN donor_tbl d ON bt.blood_id = d.blood_id {date_filter_donor_and}
-                GROUP BY bt.blood_id, bt.blood_type
-                ORDER BY bt.blood_id
-            """, date_params)
-            blood_rows = cursor.fetchall()
-            blood_distribution = [{"bloodGroup": row[0], "count": row[1]} for row in blood_rows]
+            # 5. Blood Type Distribution
+            cursor.execute(f"SELECT blood_type, COUNT(*) FROM ({filtered_query}) AS f WHERE blood_type IS NOT NULL GROUP BY blood_type", params)
+            blood_distribution = [{"bloodGroup": row[0], "count": row[1]} for row in cursor.fetchall() if row[0] is not None]
 
         return JsonResponse({
             "summary": {
@@ -2997,17 +3035,49 @@ def admin_demographics_report(request):
 def admin_supply_demand_report(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
+    blood_group = request.GET.get('blood_group')
+    req_status = request.GET.get('req_status')
+    hospital = request.GET.get('hospital')
 
-    date_filter_req = ""
-    date_filter_appt = ""
+    req_where = ""
     params_req = []
+    
+    appt_where = ""
     params_appt = []
 
+    stock_where = ""
+    params_stock = []
+
     if start_date and end_date:
-        date_filter_req = "AND br.request_date >= %s AND br.request_date <= %s"
+        req_where += " AND br.request_date >= %s AND br.request_date <= %s"
         params_req.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
-        date_filter_appt = "AND a.appointment_date >= %s AND a.appointment_date <= %s"
+        
+        appt_where += " AND a.appointment_date >= %s AND a.appointment_date <= %s"
         params_appt.extend([f"{start_date} 00:00:00", f"{end_date} 23:59:59"])
+
+    if blood_group and blood_group != 'All':
+        req_where += " AND br.blood_group = %s"
+        params_req.append(blood_group)
+        
+        stock_where += " AND bt.blood_type = %s"
+        params_stock.append(blood_group)
+        
+        appt_where += " AND bt.blood_type = %s"
+        params_appt.append(blood_group)
+
+    if req_status and req_status != 'All':
+        req_where += " AND br.status = %s"
+        params_req.append(req_status)
+
+    if hospital:
+        req_where += " AND h_req.hospital_name LIKE %s"
+        params_req.append(f"%{hospital}%")
+        
+        stock_where += " AND h_stock.hospital_name LIKE %s"
+        params_stock.append(f"%{hospital}%")
+        
+        appt_where += " AND h_appt.hospital_name LIKE %s"
+        params_appt.append(f"%{hospital}%")
 
     try:
         with connection.cursor() as cursor:
@@ -3015,7 +3085,8 @@ def admin_supply_demand_report(request):
             cursor.execute(f"""
                 SELECT br.blood_group, COALESCE(SUM(br.units), 0) as total_demand
                 FROM blood_request_tbl br
-                WHERE 1=1 {date_filter_req}
+                LEFT JOIN hospital_registration_tbl h_req ON br.hospital_id = h_req.hospital_id
+                WHERE 1=1 {req_where}
                 GROUP BY br.blood_group
                 ORDER BY total_demand DESC
             """, params_req)
@@ -3025,13 +3096,15 @@ def admin_supply_demand_report(request):
             } for row in demand_rows]
 
             # 2. Supply by Blood Group (Available stock)
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT bt.blood_type, COALESCE(SUM(bs.quantity), 0)
                 FROM blood_type_tbl bt
                 LEFT JOIN blood_storage_tbl bs ON bt.blood_id = bs.blood_id AND bs.status = 'Available'
+                LEFT JOIN hospital_registration_tbl h_stock ON bs.hospital_id = h_stock.hospital_id
+                WHERE 1=1 {stock_where}
                 GROUP BY bt.blood_id, bt.blood_type
                 ORDER BY bt.blood_id
-            """)
+            """, params_stock)
             supply_rows = cursor.fetchall()
             supply_map = {row[0]: int(row[1]) for row in supply_rows}
 
@@ -3054,7 +3127,8 @@ def admin_supply_demand_report(request):
             cursor.execute(f"""
                 SELECT br.status, COUNT(*) as cnt
                 FROM blood_request_tbl br
-                WHERE 1=1 {date_filter_req}
+                LEFT JOIN hospital_registration_tbl h_req ON br.hospital_id = h_req.hospital_id
+                WHERE 1=1 {req_where}
                 GROUP BY br.status
             """, params_req)
             status_rows = cursor.fetchall()
@@ -3066,11 +3140,11 @@ def admin_supply_demand_report(request):
 
             # 4. Top Demanding Hospitals
             cursor.execute(f"""
-                SELECT h.hospital_name, COUNT(br.request_id) as req_count, COALESCE(SUM(br.units), 0) as total_units
+                SELECT h_req.hospital_name, COUNT(br.request_id) as req_count, COALESCE(SUM(br.units), 0) as total_units
                 FROM blood_request_tbl br
-                JOIN hospital_registration_tbl h ON br.hospital_id = h.hospital_id
-                WHERE 1=1 {date_filter_req}
-                GROUP BY h.hospital_id, h.hospital_name
+                JOIN hospital_registration_tbl h_req ON br.hospital_id = h_req.hospital_id
+                WHERE 1=1 {req_where}
+                GROUP BY h_req.hospital_id, h_req.hospital_name
                 ORDER BY total_units DESC
                 LIMIT 10
             """, params_req)
@@ -3080,27 +3154,31 @@ def admin_supply_demand_report(request):
             } for row in hosp_rows]
 
             # 5. Monthly Request Trend (Last 6 Months)
-            cursor.execute("""
-                SELECT DATE_FORMAT(request_date, '%%Y-%%m') as month, COUNT(*) as cnt, COALESCE(SUM(units), 0) as units
-                FROM blood_request_tbl
-                WHERE request_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+            cursor.execute(f"""
+                SELECT DATE_FORMAT(br.request_date, '%%Y-%%m') as month, COUNT(*) as cnt, COALESCE(SUM(br.units), 0) as units
+                FROM blood_request_tbl br
+                LEFT JOIN hospital_registration_tbl h_req ON br.hospital_id = h_req.hospital_id
+                WHERE br.request_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) {req_where}
                 GROUP BY month
                 ORDER BY month ASC
-            """)
+            """, params_req)
             trend_rows = cursor.fetchall()
             monthly_trend = [{
                 "month": row[0], "requests": int(row[1]), "units": int(row[2])
             } for row in trend_rows]
 
             # 6. Donation Supply Trend (Last 6 Months)
-            cursor.execute("""
-                SELECT DATE_FORMAT(appointment_date, '%%Y-%%m') as month, COUNT(*) as donations
-                FROM appointment_tbl
-                WHERE status IN ('Fulfilled', 'Transfusion Done')
-                  AND appointment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+            cursor.execute(f"""
+                SELECT DATE_FORMAT(a.appointment_date, '%%Y-%%m') as month, COUNT(*) as donations
+                FROM appointment_tbl a
+                LEFT JOIN hospital_registration_tbl h_appt ON a.hospital_id = h_appt.hospital_id
+                LEFT JOIN donor_tbl d ON a.donor_id = d.donor_id
+                LEFT JOIN blood_type_tbl bt ON d.blood_id = bt.blood_id
+                WHERE a.status IN ('Fulfilled', 'Transfusion Done')
+                  AND a.appointment_date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) {appt_where}
                 GROUP BY month
                 ORDER BY month ASC
-            """)
+            """, params_appt)
             donation_trend_rows = cursor.fetchall()
             donation_trend = [{
                 "month": row[0], "donations": int(row[1])
