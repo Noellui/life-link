@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const BLOOD_GROUPS = ['All', 'A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 const GENDERS = ['All', 'Male', 'Female', 'Other', 'Not Specified'];
@@ -166,6 +167,7 @@ const UserDemographicsReport = () => {
       });
     }
 
+    addPdfFooter(doc, 'User & Demographic Analytics');
     doc.save(`LifeLink_Demographics_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 

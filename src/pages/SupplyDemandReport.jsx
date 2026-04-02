@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const BLOOD_GROUPS = ['All', 'A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 const SD_STATUSES = ['All', 'Deficit', 'Balanced', 'Surplus'];
@@ -163,6 +164,7 @@ const SupplyDemandReport = () => {
       theme: 'striped', headStyles: { fillColor: [75, 85, 99] },
     });
 
+    addPdfFooter(doc, 'Supply & Demand Dynamics');
     doc.save(`LifeLink_SupplyDemand_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 

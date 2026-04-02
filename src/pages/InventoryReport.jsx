@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const BLOOD_GROUPS = ['All', 'A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 const EXPIRY_WINDOWS = [
@@ -194,6 +195,7 @@ const InventoryReport = () => {
       });
     }
 
+    addPdfFooter(doc, 'Global Blood Inventory Report');
     doc.save(`LifeLink_Inventory_${dateStr.replace(/\//g, '-')}.pdf`);
   };
 

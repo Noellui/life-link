@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { addPdfFooter } from '../utils/pdfFooter';
 
 const REVENUE_TYPES = ['All', 'Subscription', 'Patient Platform Fees', 'Sponsorship', 'Other'];
 const SUB_STATUSES = ['All', 'Active', 'Expired'];
@@ -140,6 +141,7 @@ const FinanceReport = () => {
             headStyles: { fillColor: [75, 85, 99] },
         });
 
+        addPdfFooter(doc, 'Financial & Revenue Report');
         doc.save(`LifeLink_Finance_${dateStr.replace(/\//g, '-')}.pdf`);
     };
 
