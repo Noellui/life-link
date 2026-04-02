@@ -3001,6 +3001,15 @@ def admin_demographics_report(request):
             for row in dob_rows:
                 dob = row[0]
                 if dob:
+                    # ---> FIX START: Convert string to Date object if needed <---
+                    if isinstance(dob, str):
+                        try:
+                            # Parse the string 'YYYY-MM-DD' into a date object
+                            dob = datetime.datetime.strptime(dob.split(' ')[0], '%Y-%m-%d').date()
+                        except ValueError:
+                            continue  # Skip if the date format is corrupted
+                    # ---> FIX END <---
+
                     age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
                     if age < 25: age_buckets["18-24"] += 1
                     elif age < 35: age_buckets["25-34"] += 1
